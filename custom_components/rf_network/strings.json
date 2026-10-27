@@ -1,0 +1,103 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "RF Network",
+        "description": "Control fixed-code RF devices (ceiling fans, shades, plug-in remotes) through one or more ESPHome RF gateways. Gateways are found automatically: each ESPHome node that exposes the `transmit_rf_fan` action is a gateway.\n\nIn the ESPHome integration, turn on **Allow the device to perform Home Assistant actions** for every gateway, or received codes will not reach Home Assistant."
+      }
+    },
+    "abort": {
+      "already_configured": "RF Network is already set up. Add devices from its Configure button."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "RF Network",
+        "menu_options": {
+          "add_fan": "Add a ceiling fan (12-bit DIP, Bond template A3)",
+          "add_buttons": "Add a remote from learned codes",
+          "edit_buttons": "Edit a learned remote",
+          "remove_device": "Remove a device",
+          "settings": "Settings"
+        }
+      },
+      "add_fan": {
+        "title": "Add a ceiling fan",
+        "description": "Enter the fan's 6-bit address: the first 6 digits of any code from its remote (see the RF Network Last code sensor). Every button code is generated from it.",
+        "data": {
+          "name": "Name",
+          "address": "Address (6 bits, e.g. 010101)",
+          "gateway": "Gateway"
+        },
+        "data_description": {
+          "gateway": "Automatic sends through the gateway that most recently heard this fan's remote."
+        }
+      },
+      "add_buttons": {
+        "title": "Add a remote from learned codes",
+        "description": "Press a button on the remote, read the code from the RF Network Last code sensor, and add one line per button:\n`Button name = 6:010101110111`\n{error_detail}",
+        "data": {
+          "name": "Name",
+          "gateway": "Gateway",
+          "buttons": "Buttons"
+        }
+      },
+      "edit_buttons": {
+        "title": "Edit a learned remote",
+        "data": {
+          "device": "Remote"
+        }
+      },
+      "edit_buttons_codes": {
+        "title": "Edit a learned remote",
+        "description": "One line per button: `Button name = 6:010101110111`\n{error_detail}",
+        "data": {
+          "name": "Name",
+          "gateway": "Gateway",
+          "buttons": "Buttons"
+        }
+      },
+      "remove_device": {
+        "title": "Remove a device",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "settings": {
+        "title": "Settings",
+        "data": {
+          "repeat_count": "Repeats per command",
+          "burst_gap_ms": "Silence that ends a remote press",
+          "echo_window_ms": "Ignore echoes of our own commands for"
+        },
+        "data_description": {
+          "repeat_count": "How many times each code is sent. Too few and the fan may miss it; too many and a light toggle can turn into dimming.",
+          "burst_gap_ms": "Frames of the same code closer together than this count as one press.",
+          "echo_window_ms": "After sending, other gateways hear our own signal. Codes we just sent are ignored for this long."
+        }
+      }
+    },
+    "error": {
+      "invalid_address": "The address must be exactly 6 digits of 0 and 1.",
+      "address_in_use": "Another fan already uses this address. Two fans with the same address always react together; change the DIP switches on one of them.",
+      "name_in_use": "Enter a name that is not already used by another device.",
+      "invalid_buttons": "Some lines could not be read."
+    }
+  },
+  "entity": {
+    "fan": {
+      "fan": { "name": "Fan" }
+    },
+    "light": {
+      "light": { "name": "Light" }
+    },
+    "button": {
+      "dim_step": { "name": "Light dim step" }
+    },
+    "sensor": {
+      "last_code": { "name": "Last code" },
+      "gateways": { "name": "Gateways" }
+    }
+  }
+}

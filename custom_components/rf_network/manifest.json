@@ -1,0 +1,13 @@
+{
+  "domain": "rf_network",
+  "name": "RF Network",
+  "after_dependencies": ["esphome"],
+  "codeowners": ["@forlornlawngnome"],
+  "config_flow": true,
+  "documentation": "https://github.com/forlornlawngnome/ha_rf_generic_network",
+  "integration_type": "hub",
+  "iot_class": "assumed_state",
+  "issue_tracker": "https://github.com/forlornlawngnome/ha_rf_generic_network/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
