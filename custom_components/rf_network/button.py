@@ -30,6 +30,7 @@ async def async_setup_entry(
         if not isinstance(dev, TemplateDevice):
             continue
         tpl = dev.template
+        entities.extend(RFNetworkExtraButton(dev, name) for name in dev.extra_buttons)
         if tpl.type == TYPE_BUTTONS:
             entities.extend(RFNetworkCommandButton(dev, name) for name in tpl.commands if name != "release")
         if tpl.type not in (TYPE_FAN, TYPE_LIGHT):
@@ -59,6 +60,20 @@ class RFNetworkCommandButton(RFNetworkEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         await self.device.async_command(self._command)
+
+
+class RFNetworkExtraButton(RFNetworkEntity, ButtonEntity):
+    """A button you added to a template device: command bits + its address."""
+
+    _attr_assumed_state = False
+
+    def __init__(self, device: TemplateDevice, name: str) -> None:
+        super().__init__(device, f"extra_{slugify(name)}")
+        self._attr_name = name
+        self._button = name
+
+    async def async_press(self) -> None:
+        await self.device.async_extra(self._button)
 
 
 class RFNetworkDimStep(RFNetworkEntity, ButtonEntity):

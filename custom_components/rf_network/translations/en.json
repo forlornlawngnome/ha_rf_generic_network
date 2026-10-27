@@ -16,6 +16,7 @@
         "title": "RF Network",
         "menu_options": {
           "add_device": "Add a device from a template",
+          "edit_device": "Edit a device (name, address, extra buttons)",
           "add_learned": "Add a remote from learned codes",
           "edit_learned": "Edit a learned remote",
           "remove_device": "Remove a device",
@@ -31,11 +32,12 @@
       },
       "device_details": {
         "title": "Add a device: {template}",
-        "description": "The address is the {bits}-bit part of the code unique to this device, e.g. `{example}`. If you just pressed a button on its remote, it is filled in. This template uses {frequency} MHz; it is sent through a gateway on that band.",
+        "description": "The address is the {bits}-bit part of the code unique to this device, e.g. `{example}`. If you just pressed a button on its remote, it is filled in. This template uses {frequency} MHz; it is sent through a gateway on that band.\n\n**Extra buttons** (optional): one per line, `Button name = ` followed by the last {command_bits} bits of a code; the address is added for you.\n{error_detail}",
         "data": {
           "name": "Name",
           "address": "Address",
-          "gateway": "Gateway"
+          "gateway": "Gateway",
+          "extra_buttons": "Extra buttons"
         },
         "data_description": {
           "gateway": "Automatic sends through the gateway on the right band that most recently heard this device's remote."
@@ -83,6 +85,22 @@
           "burst_gap_ms": "Captures of the same code closer together than this count as one press.",
           "echo_window_ms": "After sending, other gateways hear our own signal. Codes we just sent are ignored for this long."
         }
+      },
+      "edit_device": {
+        "title": "Edit a device",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "edit_device_details": {
+        "title": "Edit {template} device",
+        "description": "**Extra buttons**: one per line, `Button name = ` followed by the last {command_bits} bits of a code (the part after the {bits}-bit address). Each becomes a button on this device.\n{error_detail}",
+        "data": {
+          "name": "Name",
+          "address": "Address",
+          "gateway": "Gateway",
+          "extra_buttons": "Extra buttons"
+        }
       }
     },
     "error": {
@@ -92,7 +110,8 @@
       "invalid_buttons": "Some lines could not be read."
     },
     "abort": {
-      "no_templates": "No templates could be loaded. Check the Home Assistant log for template errors."
+      "no_templates": "No templates could be loaded. Check the Home Assistant log for template errors.",
+      "template_missing": "This device's template could not be loaded. Check the Home Assistant log for template errors."
     }
   },
   "issues": {
@@ -103,20 +122,36 @@
   },
   "entity": {
     "fan": {
-      "fan": { "name": "Fan" }
+      "fan": {
+        "name": "Fan"
+      }
     },
     "light": {
-      "light": { "name": "Light" }
+      "light": {
+        "name": "Light"
+      }
     },
     "button": {
-      "dim_step": { "name": "Light dim step" },
-      "light_brightness_up": { "name": "Brighter" },
-      "light_brightness_down": { "name": "Dimmer" }
+      "dim_step": {
+        "name": "Light dim step"
+      },
+      "light_brightness_up": {
+        "name": "Brighter"
+      },
+      "light_brightness_down": {
+        "name": "Dimmer"
+      }
     },
     "sensor": {
-      "last_code": { "name": "Last code" },
-      "last_unknown": { "name": "Last unrecognised signal" },
-      "gateways": { "name": "Gateways" }
+      "last_code": {
+        "name": "Last code"
+      },
+      "last_unknown": {
+        "name": "Last unrecognised signal"
+      },
+      "gateways": {
+        "name": "Gateways"
+      }
     }
   }
 }

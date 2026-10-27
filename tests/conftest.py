@@ -72,7 +72,13 @@ async def gateways(hass: HomeAssistant) -> FakeGateways:
     return gws
 
 
-FAN = {"template": "aircool_12bit_dip", "name": "Living Room Fan", "address": "010101", "gateway": "auto"}
+FAN = {
+    "template": "aircool_12bit_dip",
+    "name": "Living Room Fan",
+    "address": "010101",
+    "gateway": "auto",
+    "extra_buttons": {"Turbo": "010111"},
+}
 LEARNED = {
     "template": "learned",
     "name": "LED Strip",

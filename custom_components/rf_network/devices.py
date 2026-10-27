@@ -10,6 +10,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from .const import (
     CONF_ADDRESS,
     CONF_BUTTONS,
+    CONF_EXTRA_BUTTONS,
     CONF_GATEWAY,
     CONF_NAME,
     CONF_TEMPLATE,
@@ -75,7 +76,12 @@ class RFDevice:
 
 
 class TemplateDevice(RFDevice):
-    """A device described by a template: the address is its only setting."""
+    """A device described by a template plus its address.
+
+    Extra buttons are command bits the template does not name (e.g. a key
+    combination you found that does something useful); the address is added
+    to them like to any other command.
+    """
 
     def __init__(self, hub: RFNetwork, dev_id: str, conf: dict[str, Any], template: DeviceTemplate) -> None:
         super().__init__(hub, dev_id, conf)
@@ -83,6 +89,16 @@ class TemplateDevice(RFDevice):
         self.address: str = conf.get(CONF_ADDRESS, "")
         self.frequency_mhz = template.frequency_mhz
         self.model = template.name
+        self.extra_buttons: dict[str, str] = dict(conf.get(CONF_EXTRA_BUTTONS) or {})
+        self._extra_by_bits = {bits: name for name, bits in self.extra_buttons.items()}
+
+    def extra_code(self, name: str) -> str:
+        """Full code of an extra button."""
+        return self.template.code(self.address, self.extra_buttons[name])
+
+    async def async_extra(self, name: str) -> str:
+        """Send an extra button."""
+        return await self.async_send_code(self.extra_code(name), repeat_count=self.template.repeat_count)
 
     @property
     def type(self) -> str:
@@ -112,7 +128,7 @@ class TemplateDevice(RFDevice):
         parts = self.template.split(press.code)
         if parts is None:
             return None
-        name = self.template.identify(parts[1])
+        name = self.template.identify(parts[1]) or self._extra_by_bits.get(parts[1])
         if name in HOLDABLE and press.duration * 1000 >= self.template.light.get("hold_ms", 700):
             return f"{name}_hold"
         return name
@@ -142,6 +158,25 @@ def parse_buttons(text: str) -> dict[str, str]:
         buttons[name] = code
     if not buttons:
         raise ValueError("Add at least one button")
+    return buttons
+
+
+def parse_extra_buttons(text: str, bits: int) -> dict[str, str]:
+    """Parse 'Name = 010111' lines of command bits. Empty text is allowed."""
+    buttons: dict[str, str] = {}
+    for lineno, raw in enumerate((text or "").splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        name, sep, value = line.partition("=")
+        name, value = name.strip(), value.strip().replace(" ", "")
+        if not sep or not name or not value:
+            raise ValueError(f"Line {lineno}: use 'Button name = {'0' * bits}'")
+        if len(value) != bits or set(value) - {"0", "1"}:
+            raise ValueError(f"Line {lineno}: '{value}' must be exactly {bits} digits of 0 and 1 (the part after the address)")
+        if name in buttons:
+            raise ValueError(f"Line {lineno}: the button name '{name}' is used twice")
+        buttons[name] = value
     return buttons
 
 

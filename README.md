@@ -152,6 +152,7 @@ Open RF Network's **Configure**:
 - **Add a device from a template.** Press a button on the device's remote
   first: RF Network pre-selects the matching template and fills in the
   address. Otherwise pick the template and type the address.
+- **Edit a device.** Change its name, address, gateway or extra buttons.
 - **Add a remote from learned codes.** For anything no template covers:
   press each button, copy the code from the **Last code** sensor (or the raw
   code from **Last unrecognised signal**), and add one line per button.
@@ -170,6 +171,20 @@ Open RF Network's **Configure**:
 | `light` | Light; Brighter / Dimmer buttons if the template has those codes; Light dim step if it sets `dim_step_repeats` |
 | `cover` | Cover with open / close (and stop); state is the last command sent or heard |
 | `buttons` | One button per command |
+
+Every template device can also have **extra buttons** (set when adding it, or
+later with **Configure → Edit a device**): one line per button with only the
+command part of a code. The device's address is added for you, and each line
+becomes a button on that same device. Use it for key combinations the
+template does not name:
+
+```
+Turbo = 010111
+Breeze = 101101
+```
+
+Presses of those codes on the physical remote are reported with the button
+name as the `command`.
 
 State is assumed: these receivers never report back. Pressing the physical
 remote updates it.

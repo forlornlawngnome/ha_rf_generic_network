@@ -32,6 +32,7 @@ CONF_NAME = "name"
 CONF_GATEWAY = "gateway"
 CONF_ADDRESS = "address"
 CONF_BUTTONS = "buttons"
+CONF_EXTRA_BUTTONS = "extra_buttons"
 
 TEMPLATE_LEARNED = "learned"
 GATEWAY_AUTO = "auto"
