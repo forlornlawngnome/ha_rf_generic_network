@@ -61,21 +61,62 @@ packages:
   rf_network:
     url: https://github.com/forlornlawngnome/ha_rf_generic_network
     ref: main
+    refresh: 1d
     files:
       - esphome/hardware/esp32-devkit-cc1101.yaml
       - esphome/rf-network-core.yaml
 ```
 
-Overridable pins: `spi_clk_pin`, `spi_mosi_pin`, `spi_miso_pin`,
-`cc1101_cs_pin`, `cc1101_gdo0_pin` (transmit), `cc1101_gdo2_pin`
-(receive), plus `esp32_board` on the DevKit file. Hardware files do not set
-up Wi-Fi; add it in the gateway file (the Ethernet file sets up Ethernet).
+The full example, with the API key, OTA and Wi-Fi, is
+[`esphome/rf-gateway.example.yaml`](esphome/rf-gateway.example.yaml).
 
-For a board that needs more than pin changes, copy a hardware file. It must define
-the `spi:` bus, the network, and the substitutions `cc1101_cs_pin`,
-`cc1101_gdo0_pin` (transmit) and `cc1101_gdo2_pin` (receive). For a new
-remote type, override the radio substitutions (frequency, bit width,
-`tx_*` timings) in the gateway file.
+- `refresh: 1d` makes ESPHome check this repository for changes at most once
+  a day. To pick up a change sooner, use **Clean Build Files** on the device.
+- Pin `ref:` to a release tag instead of `main` if you want updates only when
+  you choose.
+- Hardware files do not set up Wi-Fi; add `wifi:` in the gateway file. The
+  Ethernet hardware file sets up Ethernet itself, and ESPHome does not allow
+  Wi-Fi and Ethernet on the same device.
+
+#### Substitutions you can override
+
+Set any of these in your gateway file's `substitutions:` to change it for
+that gateway only.
+
+Pins (defaults from the hardware file):
+
+| Substitution | DevKit default | Waveshare default | |
+|---|---|---|---|
+| `spi_clk_pin` | GPIO18 | GPIO15 | CC1101 SCK |
+| `spi_mosi_pin` | GPIO23 | GPIO16 | CC1101 MOSI (SI) |
+| `spi_miso_pin` | GPIO19 | GPIO17 | CC1101 MISO (SO) |
+| `cc1101_cs_pin` | GPIO5 | GPIO18 | CC1101 CSN |
+| `cc1101_gdo0_pin` | GPIO4 | GPIO1 | CC1101 GDO0, transmit data |
+| `cc1101_gdo2_pin` | GPIO26 | GPIO2 | CC1101 GDO2, receive data |
+| `esp32_board` | esp32dev | (fixed) | PlatformIO board name |
+
+Radio (defaults from `rf-network-core.yaml`):
+
+| Substitution | Default | |
+|---|---|---|
+| `cc1101_frequency` | `303` | MHz |
+| `cc1101_filter_bandwidth` | `812kHz` | Wide, for remotes that drift |
+| `rc_code_bits` | `12` | Bits per code reported to Home Assistant |
+| `tx_pulse_length` | `333` | µs per timing unit when sending |
+| `tx_sync_high` / `tx_sync_low` | `23` / `1` | Sync pulse, in units |
+| `tx_zero_high` / `tx_zero_low` | `1` / `2` | A 0 bit, in units |
+| `tx_one_high` / `tx_one_low` | `2` / `1` | A 1 bit, in units |
+| `tx_inverted` | `true` | rc_switch protocol 6 is inverted |
+| `rx_filter` | `50us` | Shorter pulses are ignored as noise |
+| `rx_idle` | `4ms` | Silence that ends one received frame |
+| `rx_recalibrate_interval` | `30s` | How often the CC1101 retunes itself |
+
+#### New hardware
+
+For a board that needs more than pin changes, copy a hardware file. It must
+define the `esp32:` platform, the `spi:` bus, and the substitutions
+`cc1101_cs_pin`, `cc1101_gdo0_pin` and `cc1101_gdo2_pin`. Boards with
+built-in Ethernet should also set up `ethernet:` there.
 
 Codes are strings of the form `<rc_switch protocol>:<bits>`, for example
 `6:010101110111`.
@@ -84,7 +125,7 @@ Tips from the first build (CC1101 at ~303 MHz):
 
 - Use the **RF Frequency** box on the gateway to tune live. Old remotes drift
   from their FCC frequency (one rated 302.0 MHz was strongest at 303.0).
-- Keep `filter: 50us` and `idle: 4ms`. Larger values broke decoding.
+- Keep `rx_filter` at 50us and `rx_idle` at 4ms. Larger values broke decoding.
 - A CC1101 board made for 315 MHz works better at ~300 MHz than a 433 MHz one.
 
 ## Device profiles
