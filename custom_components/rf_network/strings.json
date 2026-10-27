@@ -110,8 +110,8 @@
     },
     "button": {
       "dim_step": { "name": "Light dim step" },
-      "brightness_up": { "name": "Brighter" },
-      "brightness_down": { "name": "Dimmer" }
+      "light_brightness_up": { "name": "Brighter" },
+      "light_brightness_down": { "name": "Dimmer" }
     },
     "sensor": {
       "last_code": { "name": "Last code" },

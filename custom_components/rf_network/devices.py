@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 CODE_RE = re.compile(r"^([A-Za-z0-9_]+:[01]+|raw:-?\d+(,-?\d+)*)$")
 
 # Commands where holding the key does something else (ramping a dimmer).
-HOLDABLE = ("light_toggle", "toggle")
+HOLDABLE = ("light_toggle", "light_on", "light_off")
 
 
 class RFDevice:

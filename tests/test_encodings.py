@@ -52,3 +52,7 @@ def test_user_templates_and_errors(tmp_path) -> None:
     lib = load_library(str(tmp_path))
     assert "test_shade" in lib.templates and "aircool_12bit_dip" in lib.templates
     assert any("broken.yaml" in e and "unknown encoding" in e for e in lib.errors)
+    # A light needs a toggle, or both on and off.
+    assert lib.templates["test_lamp"].light_style == "on_off"
+    assert LIB.templates["aircool_12bit_dip"].light_style == "toggle"
+    assert any("half_lamp.yaml" in e and "`toggle`, or both `on` and `off`" in e for e in lib.errors)

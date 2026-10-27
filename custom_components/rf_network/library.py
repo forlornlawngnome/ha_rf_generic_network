@@ -39,18 +39,21 @@ TYPE_LABELS = {TYPE_FAN: "Fan", TYPE_LIGHT: "Light", TYPE_COVER: "Cover", TYPE_B
 # except for `buttons` templates where every command is a button.
 TYPE_COMMANDS: dict[str, dict[str, bool]] = {
     # name: required
-    TYPE_FAN: {"speeds": True, "off": False, "reverse": False, "light_toggle": False,
-               "light_on": False, "light_off": False, "release": False},
-    TYPE_LIGHT: {"toggle": False, "on": False, "off": False, "brightness_up": False,
-                 "brightness_down": False, "release": False},
+    TYPE_FAN: {"speeds": True, "off": False, "reverse": False, "release": False},
+    TYPE_LIGHT: {"release": False},
     TYPE_COVER: {"open": True, "close": True, "stop": False, "release": False},
 }
+# Light codes live in their own `light:` block, the same for light
+# templates and for the light of a fan. They become the commands
+# light_toggle, light_on, light_off, light_brightness_up, light_brightness_down.
+LIGHT_CODES = ("toggle", "on", "off", "brightness_up", "brightness_down")
 
 BITS = vol.All(str, vol.Match(r"^[01]+$"))
 PATTERN = vol.All(str, vol.Match(r"^[01?]+$"))
 
 LIGHT_SCHEMA = vol.Schema(
     {
+        **{vol.Optional(code): BITS for code in LIGHT_CODES},
         vol.Optional("dim_step_repeats"): vol.All(int, vol.Range(min=2, max=200)),
         vol.Optional("hold_ms", default=700): vol.All(int, vol.Range(min=100, max=5000)),
     }
@@ -66,7 +69,7 @@ TEMPLATE_SCHEMA = vol.Schema(
         vol.Optional("address_example", default=""): str,
         vol.Optional("repeat_count"): vol.All(int, vol.Range(min=1, max=100)),
         vol.Optional("device_class"): str,
-        vol.Required("commands"): {str: vol.Any(BITS, [BITS])},
+        vol.Optional("commands", default={}): {str: vol.Any(BITS, [BITS])},
         vol.Optional("match", default={}): {str: [PATTERN]},
         vol.Optional("light", default={}): LIGHT_SCHEMA,
     }
@@ -94,7 +97,10 @@ class DeviceTemplate:
     _lookup: list[tuple[str, str]] = field(default_factory=list, repr=False)
 
     def __post_init__(self) -> None:
-        for name, value in self.commands.items():
+        # All sendable codes by command name, light codes prefixed with light_.
+        self.codes: dict[str, Any] = dict(self.commands)
+        self.codes.update({f"light_{c}": self.light[c] for c in LIGHT_CODES if c in self.light})
+        for name, value in self.codes.items():
             if isinstance(value, list):
                 self._lookup += [(f"{name.removesuffix('s')}_{i}", bits) for i, bits in enumerate(value, start=1)]
             else:
@@ -112,7 +118,14 @@ class DeviceTemplate:
 
     def has(self, command: str) -> bool:
         """Whether the template defines a command."""
-        return command in self.commands
+        return command in self.codes
+
+    @property
+    def light_style(self) -> str | None:
+        """'on_off', 'toggle' or None if the device has no light."""
+        if "on" in self.light and "off" in self.light:
+            return "on_off"
+        return "toggle" if "toggle" in self.light else None
 
     def code(self, address: str, command_bits: str) -> str:
         """Code string for a device address and command bits."""
@@ -120,7 +133,7 @@ class DeviceTemplate:
 
     def command_code(self, address: str, command: str, index: int | None = None) -> str:
         """Code for a named command (index is 1-based for list commands)."""
-        value = self.commands[command]
+        value = self.codes[command]
         bits = value[index - 1] if isinstance(value, list) else value
         return self.code(address, bits)
 
@@ -172,14 +185,23 @@ def _validate(tid: str, conf: dict[str, Any], encodings: dict[str, Encoding], so
             raise TemplateError(f"{ttype} templates do not use: {', '.join(sorted(unknown))}")
         if missing := [c for c, req in allowed.items() if req and c not in commands]:
             raise TemplateError(f"{ttype} templates need: {', '.join(missing)}")
-    if ttype == TYPE_LIGHT and "toggle" not in commands and not {"on", "off"} <= set(commands):
-        raise TemplateError("light templates need `toggle`, or both `on` and `off`")
+    light = conf["light"]
+    light_codes = {c for c in LIGHT_CODES if c in light}
+    if light_codes and "toggle" not in light and not {"on", "off"} <= light_codes:
+        raise TemplateError("`light:` needs `toggle`, or both `on` and `off`")
+    if ttype == TYPE_LIGHT and not light_codes:
+        raise TemplateError("light templates need a `light:` block with `toggle`, or `on` and `off`")
+    if ttype in (TYPE_COVER, TYPE_BUTTONS) and light_codes:
+        raise TemplateError(f"{ttype} templates cannot have a `light:` block")
+    if ttype == TYPE_BUTTONS and not commands:
+        raise TemplateError("buttons templates need at least one command")
     if ttype == TYPE_FAN and not isinstance(commands["speeds"], list):
         raise TemplateError("`speeds` must be a list, slowest first")
-    for name, value in commands.items():
+    all_codes = {**commands, **{f"light.{c}": light[c] for c in light_codes}}
+    for name, value in all_codes.items():
         for bits in value if isinstance(value, list) else [value]:
             if len(bits) != command_len:
-                raise TemplateError(f"command '{name}' must be {command_len} bits, got '{bits}'")
+                raise TemplateError(f"'{name}' must be {command_len} bits, got '{bits}'")
     for name, patterns in conf["match"].items():
         if any(len(p) != command_len for p in patterns):
             raise TemplateError(f"match patterns for '{name}' must be {command_len} characters")

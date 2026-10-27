@@ -6,11 +6,16 @@ type: light
 frequency_mhz: 433.92
 encoding: ev1527_24
 address_bits: 20
-commands:
-  # Either a single toggle...
+
+# Lights work one of two ways. Fill in ONE of them (a fan's light uses the
+# same block):
+light:
+  # 1. A single key that toggles. Home Assistant tracks on/off itself.
   toggle: "0001"
-  # ...or separate codes:
+  # 2. Separate on and off keys. Home Assistant always knows the state.
   # on: "0001"
   # off: "0010"
-  brightness_up: "0100"     # optional, shown as buttons
-  brightness_down: "1000"   # optional
+
+  brightness_up: "0100"     # optional, shown as a Brighter button
+  brightness_down: "1000"   # optional, shown as a Dimmer button
+  # dim_step_repeats: 33    # optional: hold the key this many frames to dim

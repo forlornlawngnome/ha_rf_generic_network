@@ -12,11 +12,8 @@ from .devices import LearnedDevice, TemplateDevice
 from .entity import RFNetworkEntity
 from .library import TYPE_BUTTONS, TYPE_FAN, TYPE_LIGHT
 
-# Template commands that become extra buttons on fans and lights.
-EXTRA_BUTTONS = {
-    TYPE_LIGHT: ("brightness_up", "brightness_down"),
-}
-DIM_COMMAND = {TYPE_FAN: "light_toggle", TYPE_LIGHT: "toggle"}
+# Light codes that become buttons on fans and lights.
+EXTRA_BUTTONS = ("light_brightness_up", "light_brightness_down")
 
 
 async def async_setup_entry(
@@ -35,11 +32,14 @@ async def async_setup_entry(
         tpl = dev.template
         if tpl.type == TYPE_BUTTONS:
             entities.extend(RFNetworkCommandButton(dev, name) for name in tpl.commands if name != "release")
-        for name in EXTRA_BUTTONS.get(tpl.type, ()):
+        if tpl.type not in (TYPE_FAN, TYPE_LIGHT):
+            continue
+        for name in EXTRA_BUTTONS:
             if dev.has(name):
                 entities.append(RFNetworkCommandButton(dev, name, translated=True))
-        dim = DIM_COMMAND.get(tpl.type)
-        if dim and dev.has(dim) and tpl.light.get("dim_step_repeats"):
+        # Holding a toggle (or on) key ramps a dimmer on many receivers.
+        dim = next((c for c in ("light_toggle", "light_on") if dev.has(c)), None)
+        if dim and tpl.light.get("dim_step_repeats"):
             entities.append(RFNetworkDimStep(dev, dim, tpl.light["dim_step_repeats"]))
     async_add_entities(entities)
 

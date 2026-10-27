@@ -24,13 +24,13 @@ commands:
     - "011111"              # remote Speed 3
   off: "111101"
   reverse: "111011"
-  light_toggle: "111110"
   release: "111111"         # sent when a key is let go; never acted on
+
+light:
+  toggle: "111110"          # this receiver only toggles (no separate on/off)
+  dim_step_repeats: 33      # holding the light key ~1 s ramps the dimmer
+  hold_ms: 700              # a longer press is dimming, not a toggle
 
 match:
   # Every key combination with the light line toggles the light.
   light_toggle: ["?????0"]
-
-light:
-  dim_step_repeats: 33      # holding the light key ~1 s ramps the dimmer
-  hold_ms: 700              # a longer press is dimming, not a toggle

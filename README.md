@@ -166,13 +166,25 @@ Open RF Network's **Configure**:
 
 | Type | Entities |
 |---|---|
-| `fan` | Fan (speeds from the template, direction if it has `reverse`); Light if it has a light code; Light dim step if it sets `light.dim_step_repeats` |
-| `light` | Light (on/off; tracked if there is only a toggle); Brighter / Dimmer buttons; Light dim step |
+| `fan` | Fan (speeds from the template, direction if it has `reverse`); plus everything a `light` gets, if it has a `light:` block |
+| `light` | Light; Brighter / Dimmer buttons if the template has those codes; Light dim step if it sets `dim_step_repeats` |
 | `cover` | Cover with open / close (and stop); state is the last command sent or heard |
 | `buttons` | One button per command |
 
 State is assumed: these receivers never report back. Pressing the physical
 remote updates it.
+
+### Lights: toggle or on/off
+
+Every light, standalone or built into a fan, works one of two ways, set in
+the template's `light:` block:
+
+| Style | Template | In Home Assistant |
+|---|---|---|
+| Toggle | `toggle:` | One key flips the light. RF Network tracks on/off and only sends the toggle when the state needs to change. If the tracked state is ever wrong, tap the remote once. |
+| On/off | `on:` and `off:` | Separate keys. Turning on always sends *on*, so the light ends up right even if the tracked state was wrong. |
+
+A template may have both; on/off is then used for switching.
 
 ## Templates
 
@@ -208,21 +220,25 @@ commands:                   # the rest of the code, per command
   speeds: ["110111", "110101", "101111", "100111", "011101", "011111"]
   off: "111101"
   reverse: "111011"
-  light_toggle: "111110"
   release: "111111"         # optional "key let go" frame, ignored
+light:                      # lights and fan lights: toggle, or on + off
+  toggle: "111110"
+  # on: "..."
+  # off: "..."
+  # brightness_up: "..."    # optional buttons
+  # brightness_down: "..."
+  dim_step_repeats: 33      # optional: hold the key this many frames to dim
+  hold_ms: 700              # longer presses are holds, not toggles
 match:                      # optional: extra patterns (? = any bit)
   light_toggle: ["?????0"]
-light:                      # optional, for lights and fan lights
-  dim_step_repeats: 33      # holding the key this many frames nudges a dimmer
-  hold_ms: 700              # longer presses are holds, not toggles
 ```
 
 Commands by type:
 
 | Type | Required | Optional |
 |---|---|---|
-| `fan` | `speeds` (list, slowest first) | `off`, `reverse`, `light_toggle`, `light_on`, `light_off`, `release` |
-| `light` | `toggle`, or `on` + `off` | `brightness_up`, `brightness_down`, `release` |
+| `fan` | `speeds` (list, slowest first) | `off`, `reverse`, `release`; a `light:` block |
+| `light` | a `light:` block with `toggle`, or `on` + `off` | `brightness_up`, `brightness_down` in the block; `release` |
 | `cover` | `open`, `close` | `stop`, `release`; also `device_class:` |
 | `buttons` | any names | each becomes a button |
 
@@ -263,8 +279,9 @@ trigger:
 Event data: `code`, `gateways`, `frames`, `duration_ms`, `device`,
 `device_id`, `command`, and `suggestions` (matching templates, for presses
 from devices not added yet). Commands are the template's names
-(`speed_1`…, `off`, `reverse`, `light_toggle`, `light_toggle_hold`,
-`open`, …) or the learned button name.
+(`speed_1`…, `off`, `reverse`, `light_toggle`, `light_on`, `light_off`,
+`light_brightness_up`, `light_toggle_hold`, `open`, …) or the learned button
+name.
 
 ## Settings
 

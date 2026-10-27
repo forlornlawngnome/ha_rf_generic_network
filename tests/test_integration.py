@@ -77,6 +77,23 @@ async def test_light_and_dim(hass: HomeAssistant, entry, gateways) -> None:
     assert gateways.calls[-1][1]["repeat_count"] == 33
 
 
+async def test_on_off_light(hass: HomeAssistant, entry, gateways) -> None:
+    lamp = "light.desk_lamp"
+    assert hass.states.get(lamp).attributes.get("assumed_state") is None
+    assert hass.states.get("button.desk_lamp_brighter") is not None
+    await hass.services.async_call("light", "turn_on", {"entity_id": lamp}, blocking=True)
+    assert _sent(gateways)[1] == "00000000111111110000" + "1100"
+    # On/off codes are sent even if the state already matches.
+    await hass.services.async_call("light", "turn_on", {"entity_id": lamp}, blocking=True)
+    assert len([c for c in gateways.calls if c[0] == "rf_test"]) == 2
+    events = async_capture_events(hass, PRESS_EVENT)
+    gateways.raw("rf-test", frame(EV_ENC, "00000000111111110000" + "0011"), 3)
+    _settle(hass)
+    await hass.async_block_till_done()
+    assert events[0].data["command"] == "light_off"
+    assert hass.states.get(lamp).state == "off"
+
+
 async def test_remote_press_dedup_state_and_release(hass: HomeAssistant, entry, gateways) -> None:
     events = async_capture_events(hass, PRESS_EVENT)
     gateways.fan("rf-test", "010101101111", 6)  # speed 3 of 6

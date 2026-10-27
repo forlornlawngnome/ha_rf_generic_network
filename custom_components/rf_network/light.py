@@ -15,11 +15,7 @@ from .entity import RFNetworkEntity
 from .hub import Press
 from .library import TYPE_FAN, TYPE_LIGHT
 
-# Command names for each device type: (toggle, on, off)
-COMMANDS = {
-    TYPE_FAN: ("light_toggle", "light_on", "light_off"),
-    TYPE_LIGHT: ("toggle", "on", "off"),
-}
+TOGGLE, ON, OFF = "light_toggle", "light_on", "light_off"
 
 
 async def async_setup_entry(
@@ -30,19 +26,17 @@ async def async_setup_entry(
     """Add light devices and the lights of fans that have one."""
     entities = []
     for dev in entry.runtime_data.devices:
-        if not isinstance(dev, TemplateDevice) or dev.type not in COMMANDS:
-            continue
-        toggle, on, off = COMMANDS[dev.type]
-        if dev.has(toggle) or (dev.has(on) and dev.has(off)):
-            entities.append(RFNetworkLight(dev, toggle, on, off))
+        if isinstance(dev, TemplateDevice) and dev.type in (TYPE_FAN, TYPE_LIGHT) and dev.template.light_style:
+            entities.append(RFNetworkLight(dev))
     async_add_entities(entities)
 
 
 class RFNetworkLight(RFNetworkEntity, LightEntity, RestoreEntity):
-    """An on/off light. With only a toggle code, on/off is tracked here.
+    """A light with either a toggle code or separate on and off codes.
 
-    If the state is wrong (e.g. after a power cut), tap the physical remote
-    once: every remote press updates the state.
+    With on/off codes, every command sets the state for certain. With only a
+    toggle, on/off is tracked here; if it is ever wrong (e.g. after a power
+    cut), tap the physical remote once: every remote press updates it.
     """
 
     _attr_color_mode = ColorMode.ONOFF
@@ -50,9 +44,11 @@ class RFNetworkLight(RFNetworkEntity, LightEntity, RestoreEntity):
 
     device: TemplateDevice
 
-    def __init__(self, device: TemplateDevice, toggle: str, on: str, off: str) -> None:
+    def __init__(self, device: TemplateDevice) -> None:
         super().__init__(device, "light")
-        self._toggle, self._on, self._off = toggle, on, off
+        self._toggle, self._on, self._off = TOGGLE, ON, OFF
+        # On/off codes make the state certain; a toggle only assumes it.
+        self._attr_assumed_state = device.template.light_style != "on_off"
         if device.type == TYPE_LIGHT:
             self._attr_name = None  # the device itself is the light
         else:

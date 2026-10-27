@@ -88,11 +88,22 @@ def write_user_templates(config_dir: str) -> None:
         "name: Test shade\ntype: cover\ndevice_class: shade\nfrequency_mhz: 433.92\n"
         "encoding: ev1527_24\naddress_bits: 20\ncommands:\n  open: '0001'\n  close: '0011'\n  stop: '0101'\n"
     )
+    lights = Path(config_dir) / "rf_network" / "templates" / "lights"
+    lights.mkdir(parents=True, exist_ok=True)
+    (lights / "test_lamp.yaml").write_text(
+        "name: Test lamp\ntype: light\nfrequency_mhz: 433.92\nencoding: ev1527_24\naddress_bits: 20\n"
+        "light:\n  on: '1100'\n  off: '0011'\n  brightness_up: '1000'\n"
+    )
+    (lights / "half_lamp.yaml").write_text(
+        "name: Half lamp\ntype: light\nfrequency_mhz: 433.92\nencoding: ev1527_24\naddress_bits: 20\n"
+        "light:\n  on: '1100'\n"
+    )
     bad = Path(config_dir) / "rf_network" / "templates" / "fans"
     bad.mkdir(parents=True, exist_ok=True)
     (bad / "broken.yaml").write_text("name: Broken\ntype: fan\nfrequency_mhz: 303\nencoding: nope\ncommands: {}\n")
 
 
+LAMP = {"template": "test_lamp", "name": "Desk Lamp", "address": "00000000111111110000", "gateway": "auto"}
 SHADE = {"template": "test_shade", "name": "Patio Shade", "address": "10110011100011110000", "gateway": "auto"}
 
 
@@ -105,7 +116,7 @@ async def entry(hass: HomeAssistant, gateways: FakeGateways) -> MockConfigEntry:
         unique_id=DOMAIN,
         version=2,
         data={},
-        options={"devices": {"lr": FAN, "led": LEARNED, "shade": SHADE}, "settings": {"burst_gap_ms": 250}},
+        options={"devices": {"lr": FAN, "led": LEARNED, "shade": SHADE, "lamp": LAMP}, "settings": {"burst_gap_ms": 250}},
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
