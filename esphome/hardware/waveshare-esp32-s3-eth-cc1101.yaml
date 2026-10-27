@@ -1,0 +1,42 @@
+# Hardware: Waveshare ESP32-S3-ETH (W5500 Ethernet, optional PoE) + CC1101.
+#
+# The W5500 uses GPIO 9-14 internally, so the CC1101 gets its own SPI bus
+# on free header pins (leave the camera connector empty).
+#
+#   CC1101  ESP32-S3
+#   VCC     3V3   (3.3 V only)
+#   GND     GND
+#   SCK     GPIO15
+#   MOSI    GPIO16
+#   MISO    GPIO17
+#   CSN     GPIO18
+#   GDO0    GPIO1   (TX data)
+#   GDO2    GPIO2   (RX data)
+
+substitutions:
+  cc1101_cs_pin: GPIO18
+  cc1101_gdo0_pin: GPIO1
+  cc1101_gdo2_pin: GPIO2
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+
+ethernet:
+  type: W5500
+  interface: spi2
+  clk_pin: GPIO13
+  mosi_pin: GPIO11
+  miso_pin: GPIO12
+  cs_pin: GPIO14
+  interrupt_pin: GPIO10
+  reset_pin: GPIO9
+
+spi:
+  interface: spi3
+  clk_pin: GPIO15
+  mosi_pin: GPIO16
+  miso_pin: GPIO17

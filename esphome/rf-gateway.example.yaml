@@ -1,0 +1,31 @@
+# One RF Network gateway. Copy this file per gateway, change the name, and
+# pick the hardware file that matches the board.
+
+substitutions:
+  name: rf-gateway-1
+  friendly_name: RF Gateway 1
+  # Optional radio overrides (defaults are in rf-network-core.yaml):
+  # cc1101_frequency: "433.92"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+packages:
+  hardware: !include hardware/esp32-devkit-cc1101.yaml
+  # hardware: !include hardware/waveshare-esp32-s3-eth-cc1101.yaml
+  rf_network: !include rf-network-core.yaml
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+    # Park the radio while flashing.
+    on_begin:
+      then:
+        - cc1101.set_idle: rf_radio

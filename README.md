@@ -20,8 +20,8 @@ spread around the house.
 
 1. HACS → ⋮ → Custom repositories → add this repository as type
    *Integration*, then install **RF Network** and restart Home Assistant.
-2. Flash at least one gateway with [`esphome/rf-network-gateway.yaml`](esphome/rf-network-gateway.yaml)
-   and add it to Home Assistant through the ESPHome integration.
+2. Flash at least one gateway (see [Gateways](#gateways)) and add it to Home
+   Assistant through the ESPHome integration.
 3. In the ESPHome integration, open the gateway's **Configure** dialog and turn on
    **Allow the device to perform Home Assistant actions**. Without this,
    received codes never reach Home Assistant.
@@ -35,6 +35,24 @@ A gateway is any ESPHome node that exposes an action named
 `esphome.rf_fan_received` (fields `device`, `action`, `code`) for every frame
 it decodes. The provided YAML does both. Gateways are discovered
 automatically; the **Gateways** sensor lists the ones online.
+
+### Gateway firmware
+
+The firmware is split so the RF logic never has to be touched when the
+hardware changes:
+
+| File | Contains |
+|---|---|
+| [`esphome/rf-network-core.yaml`](esphome/rf-network-core.yaml) | Everything board-independent: the transmit action, the receive event, CC1101 radio settings, drift recalibration, the live frequency box. Tunables are substitutions at the top. |
+| [`esphome/hardware/esp32-devkit-cc1101.yaml`](esphome/hardware/esp32-devkit-cc1101.yaml) | ESP32 DevKit + CC1101 over Wi-Fi: board, network, SPI bus, pins, wiring table. |
+| [`esphome/hardware/waveshare-esp32-s3-eth-cc1101.yaml`](esphome/hardware/waveshare-esp32-s3-eth-cc1101.yaml) | Waveshare ESP32-S3-ETH (W5500, PoE) + CC1101 over Ethernet. |
+| [`esphome/rf-gateway.example.yaml`](esphome/rf-gateway.example.yaml) | One gateway: name, secrets, and which hardware file to use. Copy it per gateway. |
+
+For a new board, copy a hardware file and change the pins. It must define
+the `spi:` bus, the network, and the substitutions `cc1101_cs_pin`,
+`cc1101_gdo0_pin` (transmit) and `cc1101_gdo2_pin` (receive). For a new
+remote type, override the radio substitutions (frequency, bit width,
+`tx_*` timings) in the gateway file.
 
 Codes are strings of the form `<rc_switch protocol>:<bits>`, for example
 `6:010101110111`.

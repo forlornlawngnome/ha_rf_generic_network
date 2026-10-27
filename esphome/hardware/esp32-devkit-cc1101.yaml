@@ -1,0 +1,31 @@
+# Hardware: generic ESP32 DevKit (ESP32-WROOM-32) + 8-pin CC1101 module, Wi-Fi.
+#
+#   CC1101  ESP32
+#   VCC     3V3   (3.3 V only)
+#   GND     GND
+#   SCK     GPIO18
+#   MOSI    GPIO23
+#   MISO    GPIO19
+#   CSN     GPIO5
+#   GDO0    GPIO4   (TX data)
+#   GDO2    GPIO26  (RX data)
+
+substitutions:
+  cc1101_cs_pin: GPIO5
+  cc1101_gdo0_pin: GPIO4
+  cc1101_gdo2_pin: GPIO26
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none
+
+spi:
+  clk_pin: GPIO18
+  mosi_pin: GPIO23
+  miso_pin: GPIO19

@@ -1,0 +1,161 @@
+# RF Network gateway core: everything that does not depend on the board.
+#
+# Include it from a device file together with ONE hardware file:
+#
+#   packages:
+#     hardware: !include hardware/esp32-devkit-cc1101.yaml
+#     rf_network: !include rf-network-core.yaml
+#
+# The hardware file must define the SPI bus and these substitutions:
+#   cc1101_cs_pin    CC1101 CSN
+#   cc1101_gdo0_pin  CC1101 GDO0 (transmit data)
+#   cc1101_gdo2_pin  CC1101 GDO2 (receive data)
+#
+# The device file may override the radio substitutions below.
+
+substitutions:
+  # Frequency of the remotes this gateway should hear and drive. Old remotes
+  # drift from their FCC filing: tune live with the "RF Frequency" box and
+  # put the best value here.
+  cc1101_frequency: "303"
+  cc1101_filter_bandwidth: 812kHz
+
+  # rc_switch decoding width. Fans on Bond template A3 send 12 bits.
+  rc_code_bits: "12"
+
+  # Transmit timing: rc_switch protocol 6 shape with the remote's own unit.
+  tx_pulse_length: "333"
+  # Each pair is [high, low] in units of tx_pulse_length.
+  tx_sync_high: "23"
+  tx_sync_low: "1"
+  tx_zero_high: "1"
+  tx_zero_low: "2"
+  tx_one_high: "2"
+  tx_one_low: "1"
+  tx_inverted: "true"
+
+  # Receiver tuning that worked at ~303 MHz. Larger values broke decoding.
+  rx_filter: 50us
+  rx_idle: 4ms
+
+  # How often to re-enter RX so the CC1101 recalibrates (it drifts deaf).
+  rx_recalibrate_interval: 30s
+
+api:
+  actions:
+    # Called by the RF Network integration. `code` is "<protocol>:<bits>".
+    - action: transmit_rf_fan
+      variables:
+        action: string
+        code: string
+        repeat_count: int
+      then:
+        - remote_transmitter.transmit_rc_switch_raw:
+            transmitter_id: rf_transmitter
+            code: !lambda |-
+              const std::string raw = code;
+              const size_t sep = raw.find(':');
+              return sep == std::string::npos ? raw : raw.substr(sep + 1);
+            protocol:
+              pulse_length: ${tx_pulse_length}
+              sync:
+                - ${tx_sync_high}
+                - ${tx_sync_low}
+              zero:
+                - ${tx_zero_high}
+                - ${tx_zero_low}
+              one:
+                - ${tx_one_high}
+                - ${tx_one_low}
+              inverted: ${tx_inverted}
+            repeat:
+              times: !lambda "return repeat_count;"
+              wait_time: 10ms
+
+cc1101:
+  id: rf_radio
+  cs_pin: ${cc1101_cs_pin}
+  frequency: ${cc1101_frequency}MHz
+  modulation_type: ASK/OOK
+  filter_bandwidth: ${cc1101_filter_bandwidth}
+
+remote_transmitter:
+  - id: rf_transmitter
+    pin: ${cc1101_gdo0_pin}
+    carrier_duty_percent: 100%
+    non_blocking: true
+    on_transmit:
+      then:
+        - lambda: 'id(rf_tx_busy) = true;'
+        - cc1101.begin_tx: rf_radio
+    on_complete:
+      then:
+        - cc1101.begin_rx: rf_radio
+        - lambda: 'id(rf_tx_busy) = false;'
+
+remote_receiver:
+  - id: rf_receiver
+    pin: ${cc1101_gdo2_pin}
+    tolerance: 50%
+    filter: ${rx_filter}
+    idle: ${rx_idle}
+    # Set to [rc_switch] (or [rc_switch, raw]) to see codes in the log.
+    dump: []
+    on_rc_switch:
+      then:
+        - if:
+            condition:
+              api.connected:
+            then:
+              # Needs "Allow the device to perform Home Assistant actions"
+              # enabled for this device in the ESPHome integration.
+              - homeassistant.event:
+                  event: esphome.rf_fan_received
+                  data_template:
+                    device: ${name}
+                    action: "sniff"
+                    code: "{{ rc_code }}"
+                  variables:
+                    rc_code: !lambda |-
+                      const int nbits = ${rc_code_bits};
+                      std::string bits;
+                      for (int i = nbits - 1; i >= 0; i--)
+                        bits += ((x.code >> i) & 1) ? '1' : '0';
+                      return std::to_string(x.protocol) + ":" + bits;
+
+globals:
+  - id: rf_tx_busy
+    type: bool
+    initial_value: 'false'
+
+interval:
+  - interval: ${rx_recalibrate_interval}
+    then:
+      - if:
+          condition:
+            lambda: 'return !id(rf_tx_busy);'
+          then:
+            - cc1101.begin_rx: rf_radio
+
+number:
+  - platform: template
+    name: "RF Frequency (MHz)"
+    entity_category: config
+    min_value: 300
+    max_value: 928
+    step: 0.05
+    initial_value: ${cc1101_frequency}
+    optimistic: true
+    mode: box
+    set_action:
+      - cc1101.set_frequency:
+          id: rf_radio
+          value: !lambda "return x * 1e6;"
+      - cc1101.begin_rx: rf_radio
+
+button:
+  - platform: template
+    name: "RF Recalibrate"
+    entity_category: config
+    on_press:
+      - cc1101.begin_rx: rf_radio
