@@ -44,11 +44,34 @@ hardware changes:
 | File | Contains |
 |---|---|
 | [`esphome/rf-network-core.yaml`](esphome/rf-network-core.yaml) | Everything board-independent: the transmit action, the receive event, CC1101 radio settings, drift recalibration, the live frequency box. Tunables are substitutions at the top. |
-| [`esphome/hardware/esp32-devkit-cc1101.yaml`](esphome/hardware/esp32-devkit-cc1101.yaml) | ESP32 DevKit + CC1101 over Wi-Fi: board, network, SPI bus, pins, wiring table. |
+| [`esphome/hardware/esp32-devkit-cc1101.yaml`](esphome/hardware/esp32-devkit-cc1101.yaml) | ESP32 DevKit + CC1101: board, SPI bus, pins (all substitutions), wiring table. |
 | [`esphome/hardware/waveshare-esp32-s3-eth-cc1101.yaml`](esphome/hardware/waveshare-esp32-s3-eth-cc1101.yaml) | Waveshare ESP32-S3-ETH (W5500, PoE) + CC1101 over Ethernet. |
-| [`esphome/rf-gateway.example.yaml`](esphome/rf-gateway.example.yaml) | One gateway: name, secrets, and which hardware file to use. Copy it per gateway. |
+| [`esphome/rf-gateway.example.yaml`](esphome/rf-gateway.example.yaml) | One gateway: name, secrets, network, pin overrides, and the package import. Copy it per gateway. |
 
-For a new board, copy a hardware file and change the pins. It must define
+Import the firmware straight from this repository in your own gateway
+file, and remap anything with substitutions, without copying or editing the
+shared files:
+
+```yaml
+substitutions:
+  name: rf-gateway-1
+  cc1101_gdo2_pin: GPIO27   # wired differently on this board
+
+packages:
+  rf_network:
+    url: https://github.com/forlornlawngnome/ha_rf_generic_network
+    ref: main
+    files:
+      - esphome/hardware/esp32-devkit-cc1101.yaml
+      - esphome/rf-network-core.yaml
+```
+
+Overridable pins: `spi_clk_pin`, `spi_mosi_pin`, `spi_miso_pin`,
+`cc1101_cs_pin`, `cc1101_gdo0_pin` (transmit), `cc1101_gdo2_pin`
+(receive), plus `esp32_board` on the DevKit file. Hardware files do not set
+up Wi-Fi; add it in the gateway file (the Ethernet file sets up Ethernet).
+
+For a board that needs more than pin changes, copy a hardware file. It must define
 the `spi:` bus, the network, and the substitutions `cc1101_cs_pin`,
 `cc1101_gdo0_pin` (transmit) and `cc1101_gdo2_pin` (receive). For a new
 remote type, override the radio substitutions (frequency, bit width,

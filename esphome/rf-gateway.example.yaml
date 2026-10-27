@@ -1,20 +1,44 @@
-# One RF Network gateway. Copy this file per gateway, change the name, and
-# pick the hardware file that matches the board.
+# One RF Network gateway. Copy this file per gateway into your ESPHome
+# config folder, change the name, and pick the hardware file for the board.
+#
+# The gateway code is pulled straight from GitHub, so you never edit it:
+# anything board- or remote-specific is a substitution you override here.
 
 substitutions:
   name: rf-gateway-1
   friendly_name: RF Gateway 1
-  # Optional radio overrides (defaults are in rf-network-core.yaml):
-  # cc1101_frequency: "433.92"
+
+  # --- Optional: rewire without touching the shared files -----------------
+  # Pins (defaults are in the hardware file you pick below):
+  # cc1101_cs_pin: GPIO5
+  # cc1101_gdo0_pin: GPIO4      # TX data
+  # cc1101_gdo2_pin: GPIO26     # RX data
+  # spi_clk_pin: GPIO18
+  # spi_mosi_pin: GPIO23
+  # spi_miso_pin: GPIO19
+  # Radio (defaults are in rf-network-core.yaml):
+  # cc1101_frequency: "303"
+  # rc_code_bits: "12"
+  # tx_pulse_length: "333"
 
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
 
 packages:
-  hardware: !include hardware/esp32-devkit-cc1101.yaml
-  # hardware: !include hardware/waveshare-esp32-s3-eth-cc1101.yaml
-  rf_network: !include rf-network-core.yaml
+  rf_network:
+    url: https://github.com/forlornlawngnome/ha_rf_generic_network
+    ref: main
+    refresh: 1d
+    files:
+      # Pick ONE hardware file:
+      - esphome/hardware/esp32-devkit-cc1101.yaml
+      # - esphome/hardware/waveshare-esp32-s3-eth-cc1101.yaml
+      - esphome/rf-network-core.yaml
+
+  # Working from a local copy instead? Use:
+  # hardware: !include hardware/esp32-devkit-cc1101.yaml
+  # rf_network: !include rf-network-core.yaml
 
 logger:
 
@@ -29,3 +53,10 @@ ota:
     on_begin:
       then:
         - cc1101.set_idle: rf_radio
+
+# Wi-Fi boards only. The Ethernet hardware file sets up the network itself,
+# and ESPHome does not allow Wi-Fi and Ethernet on the same device.
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none
