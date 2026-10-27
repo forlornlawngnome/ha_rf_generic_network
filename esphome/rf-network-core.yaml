@@ -1,76 +1,66 @@
 # RF Network gateway core: everything that does not depend on the board.
 #
-# Include it from a device file together with ONE hardware file:
+# The gateway knows nothing about brands or bit formats. It plays back raw
+# pulse timings it is given, and reports the raw timings of everything it
+# hears. The RF Network integration encodes and decodes using its templates,
+# so new remotes never need new firmware.
 #
-#   packages:
-#     hardware: !include hardware/esp32-devkit-cc1101.yaml
-#     rf_network: !include rf-network-core.yaml
-#
+# Include it together with ONE hardware file (see rf-gateway.example.yaml).
 # The hardware file must define the SPI bus and these substitutions:
 #   cc1101_cs_pin    CC1101 CSN
 #   cc1101_gdo0_pin  CC1101 GDO0 (transmit data)
 #   cc1101_gdo2_pin  CC1101 GDO2 (receive data)
 #
-# The device file may override the radio substitutions below.
+# Override anything below in your gateway file's `substitutions:`.
 
 substitutions:
-  # Frequency of the remotes this gateway should hear and drive. Old remotes
-  # drift from their FCC filing: tune live with the "RF Frequency" box and
-  # put the best value here.
+  # The band this gateway listens on, in MHz. A CC1101 board is tuned for
+  # one band (e.g. 315 or 433 MHz): put one gateway per band you need. Old
+  # remotes drift from their FCC filing; tune live with the "RF Frequency"
+  # box and put the best value here.
   cc1101_frequency: "303"
   cc1101_filter_bandwidth: 812kHz
-
-  # rc_switch decoding width. Fans on Bond template A3 send 12 bits.
-  rc_code_bits: "12"
-
-  # Transmit timing: rc_switch protocol 6 shape with the remote's own unit.
-  tx_pulse_length: "333"
-  # Each pair is [high, low] in units of tx_pulse_length.
-  tx_sync_high: "23"
-  tx_sync_low: "1"
-  tx_zero_high: "1"
-  tx_zero_low: "2"
-  tx_one_high: "2"
-  tx_one_low: "1"
-  tx_inverted: "true"
 
   # Receiver tuning that worked at ~303 MHz. Larger values broke decoding.
   rx_filter: 50us
   rx_idle: 4ms
+  # Captures with fewer pulses than this are noise and are not reported.
+  rx_min_pulses: "16"
+
+  # Pause between repeats of a frame when transmitting.
+  tx_repeat_gap: 10ms
 
   # How often to re-enter RX so the CC1101 recalibrates (it drifts deaf).
   rx_recalibrate_interval: 30s
 
 api:
   actions:
-    # Called by the RF Network integration. `code` is "<protocol>:<bits>".
-    - action: transmit_rf_fan
+    # Called by RF Network: send one frame `repeat_count` times.
+    # `timings` are microseconds, positive = carrier on, negative = off.
+    # `frequency_mhz` retunes for this transmission only (0 = stay put).
+    - action: rf_network_transmit
       variables:
-        action: string
-        code: string
+        timings: int[]
         repeat_count: int
+        frequency_mhz: float
       then:
-        - remote_transmitter.transmit_rc_switch_raw:
+        - if:
+            condition:
+              lambda: 'return frequency_mhz > 0 && (frequency_mhz - id(rf_listen_mhz) > 0.001f || id(rf_listen_mhz) - frequency_mhz > 0.001f);'
+            then:
+              - lambda: 'id(rf_retuned) = true;'
+              - cc1101.set_frequency:
+                  id: rf_radio
+                  value: !lambda "return frequency_mhz * 1e6;"
+        - remote_transmitter.transmit_raw:
             transmitter_id: rf_transmitter
-            code: !lambda |-
-              const std::string raw = code;
-              const size_t sep = raw.find(':');
-              return sep == std::string::npos ? raw : raw.substr(sep + 1);
-            protocol:
-              pulse_length: ${tx_pulse_length}
-              sync:
-                - ${tx_sync_high}
-                - ${tx_sync_low}
-              zero:
-                - ${tx_zero_high}
-                - ${tx_zero_low}
-              one:
-                - ${tx_one_high}
-                - ${tx_one_low}
-              inverted: ${tx_inverted}
+            code: !lambda "return std::vector<int32_t>(timings.begin(), timings.end());"
             repeat:
               times: !lambda "return repeat_count;"
-              wait_time: 10ms
+              wait_time: ${tx_repeat_gap}
+  on_client_connected:
+    - delay: 10s
+    - script.execute: rf_hello
 
 cc1101:
   id: rf_radio
@@ -90,6 +80,14 @@ remote_transmitter:
         - cc1101.begin_tx: rf_radio
     on_complete:
       then:
+        - if:
+            condition:
+              lambda: 'return id(rf_retuned);'
+            then:
+              - cc1101.set_frequency:
+                  id: rf_radio
+                  value: !lambda "return id(rf_listen_mhz) * 1e6;"
+              - lambda: 'id(rf_retuned) = false;'
         - cc1101.begin_rx: rf_radio
         - lambda: 'id(rf_tx_busy) = false;'
 
@@ -99,34 +97,56 @@ remote_receiver:
     tolerance: 50%
     filter: ${rx_filter}
     idle: ${rx_idle}
-    # Set to [rc_switch] (or [rc_switch, raw]) to see codes in the log.
+    # Set to [raw] to see captures in the log while debugging.
     dump: []
-    on_rc_switch:
+    on_raw:
       then:
         - if:
             condition:
-              api.connected:
+              and:
+                - api.connected:
+                - lambda: 'return x.size() >= ${rx_min_pulses};'
             then:
               # Needs "Allow the device to perform Home Assistant actions"
               # enabled for this device in the ESPHome integration.
               - homeassistant.event:
-                  event: esphome.rf_fan_received
-                  data_template:
+                  event: esphome.rf_network_raw
+                  data:
                     device: ${name}
-                    action: "sniff"
-                    code: "{{ rc_code }}"
-                  variables:
-                    rc_code: !lambda |-
-                      const int nbits = ${rc_code_bits};
-                      std::string bits;
-                      for (int i = nbits - 1; i >= 0; i--)
-                        bits += ((x.code >> i) & 1) ? '1' : '0';
-                      return std::to_string(x.protocol) + ":" + bits;
+                    frequency_mhz: !lambda 'return str_sprintf("%.3f", id(rf_listen_mhz));'
+                    timings: !lambda |-
+                      std::string out;
+                      out.reserve(x.size() * 6);
+                      for (size_t i = 0; i < x.size(); i++) {
+                        if (i) out += ',';
+                        out += std::to_string(x[i]);
+                      }
+                      return out;
+
+script:
+  # Tells RF Network this gateway exists and which band it listens on.
+  - id: rf_hello
+    then:
+      - if:
+          condition:
+            api.connected:
+          then:
+            - homeassistant.event:
+                event: esphome.rf_network_hello
+                data:
+                  device: ${name}
+                  frequency_mhz: !lambda 'return str_sprintf("%.3f", id(rf_listen_mhz));'
 
 globals:
   - id: rf_tx_busy
     type: bool
     initial_value: 'false'
+  - id: rf_retuned
+    type: bool
+    initial_value: 'false'
+  - id: rf_listen_mhz
+    type: float
+    initial_value: '${cc1101_frequency}'
 
 interval:
   - interval: ${rx_recalibrate_interval}
@@ -136,6 +156,9 @@ interval:
             lambda: 'return !id(rf_tx_busy);'
           then:
             - cc1101.begin_rx: rf_radio
+  - interval: 5min
+    then:
+      - script.execute: rf_hello
 
 number:
   - platform: template
@@ -148,10 +171,12 @@ number:
     optimistic: true
     mode: box
     set_action:
+      - lambda: 'id(rf_listen_mhz) = x;'
       - cc1101.set_frequency:
           id: rf_radio
           value: !lambda "return x * 1e6;"
       - cc1101.begin_rx: rf_radio
+      - script.execute: rf_hello
 
 button:
   - platform: template

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "RF Network",
-        "description": "Control fixed-code RF devices (ceiling fans, shades, plug-in remotes) through one or more ESPHome RF gateways. Gateways are found automatically: each ESPHome node that exposes the `transmit_rf_fan` action is a gateway.\n\nIn the ESPHome integration, turn on **Allow the device to perform Home Assistant actions** for every gateway, or received codes will not reach Home Assistant."
+        "description": "Control fixed-code RF devices (ceiling fans, shades, lights, plug-in remotes) through one or more ESPHome RF gateways running the RF Network firmware. Gateways are found automatically.\n\nIn the ESPHome integration, turn on **Allow the device to perform Home Assistant actions** for every gateway, or received codes will not reach Home Assistant."
       }
     },
     "abort": {
@@ -15,43 +15,50 @@
       "init": {
         "title": "RF Network",
         "menu_options": {
-          "add_fan": "Add a ceiling fan (12-bit DIP, Bond template A3)",
-          "add_buttons": "Add a remote from learned codes",
-          "edit_buttons": "Edit a learned remote",
+          "add_device": "Add a device from a template",
+          "add_learned": "Add a remote from learned codes",
+          "edit_learned": "Edit a learned remote",
           "remove_device": "Remove a device",
           "settings": "Settings"
         }
       },
-      "add_fan": {
-        "title": "Add a ceiling fan",
-        "description": "Enter the fan's 6-bit address: the first 6 digits of any code from its remote (see the RF Network Last code sensor). Every button code is generated from it.",
+      "add_device": {
+        "title": "Add a device",
+        "description": "Pick the template for the device's brand. Press a button on its remote first and RF Network suggests a match.\n\nLast press looks like: {detected}",
+        "data": {
+          "template": "Template"
+        }
+      },
+      "device_details": {
+        "title": "Add a device: {template}",
+        "description": "The address is the {bits}-bit part of the code unique to this device, e.g. `{example}`. If you just pressed a button on its remote, it is filled in. This template uses {frequency} MHz; it is sent through a gateway on that band.",
         "data": {
           "name": "Name",
-          "address": "Address (6 bits, e.g. 010101)",
+          "address": "Address",
           "gateway": "Gateway"
         },
         "data_description": {
-          "gateway": "Automatic sends through the gateway that most recently heard this fan's remote."
+          "gateway": "Automatic sends through the gateway on the right band that most recently heard this device's remote."
         }
       },
-      "add_buttons": {
+      "add_learned": {
         "title": "Add a remote from learned codes",
-        "description": "Press a button on the remote, read the code from the RF Network Last code sensor, and add one line per button:\n`Button name = 6:010101110111`\n{error_detail}",
+        "description": "For remotes no template covers. Press a button, copy the code from the RF Network Last code sensor (or the raw code from Last unrecognised signal), and add one line per button:\n`Button name = aircool_12:010101110111`\n\nLast code: `{last_code}`\n{error_detail}",
         "data": {
           "name": "Name",
           "gateway": "Gateway",
           "buttons": "Buttons"
         }
       },
-      "edit_buttons": {
+      "edit_learned": {
         "title": "Edit a learned remote",
         "data": {
           "device": "Remote"
         }
       },
-      "edit_buttons_codes": {
+      "edit_learned_codes": {
         "title": "Edit a learned remote",
-        "description": "One line per button: `Button name = 6:010101110111`\n{error_detail}",
+        "description": "One line per button: `Button name = aircool_12:010101110111`\n\nLast code: `{last_code}`\n{error_detail}",
         "data": {
           "name": "Name",
           "gateway": "Gateway",
@@ -72,17 +79,26 @@
           "echo_window_ms": "Ignore echoes of our own commands for"
         },
         "data_description": {
-          "repeat_count": "How many times each code is sent. Too few and the fan may miss it; too many and a light toggle can turn into dimming.",
-          "burst_gap_ms": "Frames of the same code closer together than this count as one press.",
+          "repeat_count": "How many times each code is sent, unless the template sets its own. Too few and the device may miss it; too many and a light toggle can turn into dimming.",
+          "burst_gap_ms": "Captures of the same code closer together than this count as one press.",
           "echo_window_ms": "After sending, other gateways hear our own signal. Codes we just sent are ignored for this long."
         }
       }
     },
     "error": {
-      "invalid_address": "The address must be exactly 6 digits of 0 and 1.",
-      "address_in_use": "Another fan already uses this address. Two fans with the same address always react together; change the DIP switches on one of them.",
+      "invalid_address": "The address must be exactly the template's number of 0/1 digits.",
+      "address_in_use": "Another device of this template already uses this address. Two devices with the same address always react together; change the address (e.g. DIP switches) on one of them.",
       "name_in_use": "Enter a name that is not already used by another device.",
       "invalid_buttons": "Some lines could not be read."
+    },
+    "abort": {
+      "no_templates": "No templates could be loaded. Check the Home Assistant log for template errors."
+    }
+  },
+  "issues": {
+    "missing_templates": {
+      "title": "RF Network devices without a template",
+      "description": "These devices use a template that could not be loaded, so they are not set up: {devices}. Check the Home Assistant log for template errors, or restore the template file."
     }
   },
   "entity": {
@@ -93,10 +109,13 @@
       "light": { "name": "Light" }
     },
     "button": {
-      "dim_step": { "name": "Light dim step" }
+      "dim_step": { "name": "Light dim step" },
+      "brightness_up": { "name": "Brighter" },
+      "brightness_down": { "name": "Dimmer" }
     },
     "sensor": {
       "last_code": { "name": "Last code" },
+      "last_unknown": { "name": "Last unrecognised signal" },
       "gateways": { "name": "Gateways" }
     }
   }

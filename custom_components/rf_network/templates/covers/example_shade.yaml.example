@@ -1,0 +1,14 @@
+# Example cover template. Copy it to <config>/rf_network/templates/covers/
+# as <name>.yaml, fill in the real codes, and restart Home Assistant.
+# Files ending in .example are not loaded.
+
+name: Example brand roller shade
+type: cover
+device_class: shade         # shade, blind, curtain, awning, garage, gate...
+frequency_mhz: 433.92
+encoding: ev1527_24
+address_bits: 20            # the part unique to each remote
+commands:
+  open: "0001"
+  close: "0011"
+  stop: "0101"              # optional

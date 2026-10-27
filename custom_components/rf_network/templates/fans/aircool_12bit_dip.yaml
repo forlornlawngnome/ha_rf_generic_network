@@ -1,0 +1,36 @@
+# Air Cool Industrial ceiling fan receivers with a 4-DIP-switch remote,
+# sold under Hampton Bay, Regency and others (FCC ID G9P2BTAUC7052T).
+# Bond calls this template "A3".
+#
+# Code = 6 address bits (4 DIP switches + "01") + 6 key bits.
+# Key bits, left to right: speed 3, speed 2, speed 1, reverse, off, light.
+# A 0 means the key is pressed; extra speeds are two keys at once.
+
+name: Air Cool 12-bit DIP fan (Bond A3)
+type: fan
+frequency_mhz: 303          # FCC filing says 302.0; real remotes drift
+encoding: aircool_12
+address_bits: 6
+address_example: "010101"
+repeat_count: 8
+
+commands:
+  speeds:                   # slowest to fastest
+    - "110111"              # remote Speed 1
+    - "110101"              # Speed 1 + Off
+    - "101111"              # remote Speed 2
+    - "100111"              # Speed 1 + Speed 2
+    - "011101"              # Speed 3 + Off
+    - "011111"              # remote Speed 3
+  off: "111101"
+  reverse: "111011"
+  light_toggle: "111110"
+  release: "111111"         # sent when a key is let go; never acted on
+
+match:
+  # Every key combination with the light line toggles the light.
+  light_toggle: ["?????0"]
+
+light:
+  dim_step_repeats: 33      # holding the light key ~1 s ramps the dimmer
+  hold_ms: 700              # a longer press is dimming, not a toggle

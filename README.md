@@ -1,20 +1,23 @@
 # RF Network
 
 A Home Assistant integration for fixed-code RF devices (ceiling fans, shades,
-plug-in remotes) using one or more cheap ESPHome gateways (ESP32 + CC1101)
-spread around the house.
+lights, plug-in remotes) using one or more cheap ESPHome gateways (ESP32 +
+CC1101) spread around the house.
 
-- **Any number of gateways.** All gateways listen. A press of a physical remote
-  heard by several gateways counts once.
-- **One transmitter at a time.** Each command goes out through a single
-  gateway, falling back to the next if it is offline. Commands are queued so
-  two gateways never transmit over each other.
-- **Device profiles.** A profile turns a little configuration into entities.
-  A ceiling fan needs only its 6-bit address; every code is generated.
-- **Remotes stay in sync.** Using the wall remote updates the fan and light in
-  Home Assistant.
-- **Remotes as triggers.** Every press fires an `rf_network_press` event you
-  can use in automations.
+- **Device templates, like Bond's.** Each brand is a YAML file that says how
+  its codes are built. A device is just *template + address*; every code is
+  generated. Templates are grouped by type: fans, lights, covers (shades,
+  blinds, awnings) and generic remotes.
+- **Any brand, any bit format.** Gateways only move raw pulse timings; all
+  encoding and decoding happens in the integration, so a new remote never
+  needs new firmware.
+- **Any number of gateways, on any bands.** All gateways listen. A press heard
+  by several gateways counts once. Each command goes out through a single
+  gateway on the right band, falling back to the next if it is offline.
+- **Recognises remotes.** Press a button on an unknown remote and RF Network
+  suggests the matching template and address.
+- **Remotes stay in sync, and work as triggers.** Using a wall remote updates
+  Home Assistant, and every press fires an `rf_network_press` event.
 
 ## Install
 
@@ -30,11 +33,20 @@ spread around the house.
 
 ## Gateways
 
-A gateway is any ESPHome node that exposes an action named
-`transmit_rf_fan` (fields `action`, `code`, `repeat_count`) and fires
-`esphome.rf_fan_received` (fields `device`, `action`, `code`) for every frame
-it decodes. The provided YAML does both. Gateways are discovered
-automatically; the **Gateways** sensor lists the ones online.
+A gateway is an ESPHome node running the RF Network firmware. It is
+deliberately simple:
+
+- It exposes an action `rf_network_transmit` (`timings`: list of µs, positive
+  = carrier on; `repeat_count`; `frequency_mhz` to retune for that
+  transmission, 0 = stay put).
+- It fires `esphome.rf_network_raw` (`device`, `frequency_mhz`, `timings` as
+  `"350,-700,..."`) for every capture, and `esphome.rf_network_hello`
+  (`device`, `frequency_mhz`) on connect and every 5 minutes.
+
+Gateways are discovered automatically. The **Gateways** sensor lists them
+with the band each one listens on. A CC1101 board is built for one band, so
+use one gateway (or one CC1101) per band you need, e.g. ~303 MHz fans and
+433.92 MHz shades.
 
 ### Gateway firmware
 
@@ -60,7 +72,7 @@ substitutions:
 packages:
   rf_network:
     url: https://github.com/forlornlawngnome/ha_rf_generic_network
-    ref: 0.1.0
+    ref: 0.2.0
     refresh: never
     files:
       - esphome/hardware/esp32-devkit-cc1101.yaml
@@ -104,16 +116,12 @@ Radio (defaults from `rf-network-core.yaml`):
 
 | Substitution | Default | |
 |---|---|---|
-| `cc1101_frequency` | `303` | MHz |
+| `cc1101_frequency` | `303` | MHz the gateway listens on (its band) |
 | `cc1101_filter_bandwidth` | `812kHz` | Wide, for remotes that drift |
-| `rc_code_bits` | `12` | Bits per code reported to Home Assistant |
-| `tx_pulse_length` | `333` | µs per timing unit when sending |
-| `tx_sync_high` / `tx_sync_low` | `23` / `1` | Sync pulse, in units |
-| `tx_zero_high` / `tx_zero_low` | `1` / `2` | A 0 bit, in units |
-| `tx_one_high` / `tx_one_low` | `2` / `1` | A 1 bit, in units |
-| `tx_inverted` | `true` | rc_switch protocol 6 is inverted |
 | `rx_filter` | `50us` | Shorter pulses are ignored as noise |
-| `rx_idle` | `4ms` | Silence that ends one received frame |
+| `rx_idle` | `4ms` | Silence that ends one captured frame |
+| `rx_min_pulses` | `16` | Shorter captures are noise and not reported |
+| `tx_repeat_gap` | `10ms` | Pause between repeats when sending |
 | `rx_recalibrate_interval` | `30s` | How often the CC1101 retunes itself |
 
 #### New hardware
@@ -123,45 +131,123 @@ define the `esp32:` platform, the `spi:` bus, and the substitutions
 `cc1101_cs_pin`, `cc1101_gdo0_pin` and `cc1101_gdo2_pin`. Boards with
 built-in Ethernet should also set up `ethernet:` there.
 
-Codes are strings of the form `<rc_switch protocol>:<bits>`, for example
-`6:010101110111`.
+Bit formats are not set in the firmware any more: they live in the
+integration's encodings and templates.
+
+Codes are written `<encoding>:<bits>`, for example
+`aircool_12:010101110111`, or `raw:<timings>` for signals no encoding knows.
 
 Tips from the first build (CC1101 at ~303 MHz):
 
 - Use the **RF Frequency** box on the gateway to tune live. Old remotes drift
   from their FCC frequency (one rated 302.0 MHz was strongest at 303.0).
 - Keep `rx_filter` at 50us and `rx_idle` at 4ms. Larger values broke decoding.
+- Turn on `dump: [raw]` in `remote_receiver` to see captures in the device log.
 - A CC1101 board made for 315 MHz works better at ~300 MHz than a 433 MHz one.
 
-## Device profiles
+## Devices
 
-### Ceiling fan (12-bit DIP, Bond template A3)
+Open RF Network's **Configure**:
 
-12-bit frames, rc_switch protocol 6 shape (~333 µs unit): 6 address bits
-(4 DIP switches plus `01`) then 6 active-low key bits:
-`speed 3, speed 2, speed 1, reverse, off, light`. `111111` is the
-"released" frame.
+- **Add a device from a template.** Press a button on the device's remote
+  first: RF Network pre-selects the matching template and fills in the
+  address. Otherwise pick the template and type the address.
+- **Add a remote from learned codes.** For anything no template covers:
+  press each button, copy the code from the **Last code** sensor (or the raw
+  code from **Last unrecognised signal**), and add one line per button.
+  Each line becomes a button entity.
 
-| Entity | What it does |
+  ```
+  Power = ev1527_24:000100110101000110100011
+  Odd one = raw:500,-500,500,-1500,1500,-500
+  ```
+
+### Entities per template type
+
+| Type | Entities |
 |---|---|
-| Fan | 6 speeds (1, 3 and 6 are the remote's keys; 2, 4, 5 are key combinations), direction |
-| Light | On/off. The receiver only toggles, so state is tracked; remote presses resync it |
-| Light dim step | Holds the light key ~1 s; the dimmer ramps in its current direction |
+| `fan` | Fan (speeds from the template, direction if it has `reverse`); Light if it has a light code; Light dim step if it sets `light.dim_step_repeats` |
+| `light` | Light (on/off; tracked if there is only a toggle); Brighter / Dimmer buttons; Light dim step |
+| `cover` | Cover with open / close (and stop); state is the last command sent or heard |
+| `buttons` | One button per command |
 
-Add one with **Configure → Add a ceiling fan** and the first 6 digits of any
-code from its remote, e.g. `010101`.
+State is assumed: these receivers never report back. Pressing the physical
+remote updates it.
 
-### Learned buttons
+## Templates
 
-Any fixed-code remote. Press each button, copy the code from the **Last
-code** sensor, and enter one line per button:
+Built-in templates are in
+[`custom_components/rf_network/templates/`](custom_components/rf_network/templates):
 
 ```
-Open = 6:010101110111
-Close = 6:010101101111
+templates/
+  encodings.yaml        bit formats shared by templates
+  fans/                 type: fan
+  lights/               type: light
+  covers/               type: cover   (shades, blinds, awnings, gates)
+  generic/              type: buttons (remotes with no state)
 ```
 
-Each line becomes a button entity.
+Add your own in `<config>/rf_network/templates/<folder>/<name>.yaml` and
+`<config>/rf_network/encodings.yaml`, then reload RF Network. A file with the
+same name as a built-in one replaces it. Problems are written to the Home
+Assistant log, and devices whose template is missing raise a repair issue.
+Each folder has an `.example` file to copy.
+
+### Template format
+
+```yaml
+name: Air Cool 12-bit DIP fan (Bond A3)
+type: fan                   # fan, light, cover or buttons
+frequency_mhz: 303          # sent through a gateway on this band
+encoding: aircool_12        # from encodings.yaml, or an inline encoding
+address_bits: 6             # leading bits unique to each device
+address_example: "010101"
+repeat_count: 8             # optional; else the integration setting
+commands:                   # the rest of the code, per command
+  speeds: ["110111", "110101", "101111", "100111", "011101", "011111"]
+  off: "111101"
+  reverse: "111011"
+  light_toggle: "111110"
+  release: "111111"         # optional "key let go" frame, ignored
+match:                      # optional: extra patterns (? = any bit)
+  light_toggle: ["?????0"]
+light:                      # optional, for lights and fan lights
+  dim_step_repeats: 33      # holding the key this many frames nudges a dimmer
+  hold_ms: 700              # longer presses are holds, not toggles
+```
+
+Commands by type:
+
+| Type | Required | Optional |
+|---|---|---|
+| `fan` | `speeds` (list, slowest first) | `off`, `reverse`, `light_toggle`, `light_on`, `light_off`, `release` |
+| `light` | `toggle`, or `on` + `off` | `brightness_up`, `brightness_down`, `release` |
+| `cover` | `open`, `close` | `stop`, `release`; also `device_class:` |
+| `buttons` | any names | each becomes a button |
+
+### Encodings
+
+An encoding turns bits into pulses (`templates/encodings.yaml`):
+
+```yaml
+ev1527_24:
+  pulse: 350        # µs per unit
+  sync: [1, 31]     # [high, low] in units, sent before the bits
+  zero: [1, 3]
+  one: [3, 1]
+  inverted: false   # true: each pair starts with the low half
+  bits: 24
+  tolerance: 50     # % timing error accepted when decoding
+```
+
+Built in: `aircool_12` (Air Cool / Hampton Bay fans) and `ev1527_24` (the
+common EV1527 / PT2262 433 MHz format used by many cheap remotes).
+
+To work out a new remote: set `dump: [raw]` on a gateway, press a button a
+few times, and read the pulse lengths. Most fixed-code remotes are one short
+and one long pulse per bit. Codes that change on every press of the same
+button are *rolling codes* and cannot be replayed.
 
 ## Automations
 
@@ -171,26 +257,31 @@ trigger:
     event_type: rf_network_press
     event_data:
       device: Living Room Fan
-      command: light
+      command: light_toggle
 ```
 
 Event data: `code`, `gateways`, `frames`, `duration_ms`, `device`,
-`device_id`, `command` (fans: `speed_1`…`speed_6`, `off`, `reverse`,
-`light`, `light_hold`; learned buttons: the button name).
+`device_id`, `command`, and `suggestions` (matching templates, for presses
+from devices not added yet). Commands are the template's names
+(`speed_1`…, `off`, `reverse`, `light_toggle`, `light_toggle_hold`,
+`open`, …) or the learned button name.
 
 ## Settings
 
 | Setting | Default | |
 |---|---|---|
-| Repeats per command | 8 | Too few: missed. Too many: a light toggle becomes dimming |
-| Silence that ends a press | 250 ms | Frames closer than this are one press |
+| Repeats per command | 8 | Unless the template sets its own. Too few: missed. Too many: a light toggle becomes dimming |
+| Silence that ends a press | 250 ms | Captures closer than this are one press |
 | Ignore echoes for | 600 ms | Gateways hear our own transmissions |
 
-## Adding a profile
+## Upgrading from 0.1.0
 
-Profiles live in `custom_components/rf_network/devices.py`. Subclass
-`RFDevice`, implement `matches()` and `describe()`, register it in `PROFILES`,
-then add the entities in the platform files and a step in `config_flow.py`.
+- Update every gateway to the 0.2.0 firmware (`ref: 0.2.0`). 0.2.0 gateways
+  send raw pulses; 0.1.0 gateways are not recognised.
+- The integration migrates your devices on its own: fans become the
+  `aircool_12bit_dip` template and learned `6:` codes become `aircool_12:`.
+- Automations on `rf_network_press` now see `light_toggle` instead of
+  `light`.
 
 ## Versions
 

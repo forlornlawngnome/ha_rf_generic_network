@@ -17,9 +17,7 @@ substitutions:
   # spi_mosi_pin: GPIO23
   # spi_miso_pin: GPIO19
   # Radio (defaults are in rf-network-core.yaml):
-  # cc1101_frequency: "303"
-  # rc_code_bits: "12"
-  # tx_pulse_length: "333"
+  # cc1101_frequency: "303"     # the band this gateway listens on
 
 esphome:
   name: ${name}
@@ -30,7 +28,7 @@ packages:
     url: https://github.com/forlornlawngnome/ha_rf_generic_network
     # A release tag: the gateway only changes when you change this.
     # See https://github.com/forlornlawngnome/ha_rf_generic_network/releases
-    ref: 0.1.0
+    ref: 0.2.0
     refresh: never
     files:
       # Pick ONE hardware file:

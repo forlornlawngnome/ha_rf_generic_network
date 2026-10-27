@@ -11,6 +11,7 @@ from homeassistant.components.fan import (
     FanEntityFeature,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util.percentage import (
@@ -19,9 +20,10 @@ from homeassistant.util.percentage import (
 )
 
 from . import RFNetworkConfigEntry
-from .devices import FanDip12
+from .devices import TemplateDevice
 from .entity import RFNetworkEntity
 from .hub import Press
+from .library import TYPE_FAN
 
 
 async def async_setup_entry(
@@ -31,31 +33,31 @@ async def async_setup_entry(
 ) -> None:
     """Add a fan entity for every fan device."""
     async_add_entities(
-        RFNetworkFan(dev) for dev in entry.runtime_data.devices if isinstance(dev, FanDip12)
+        RFNetworkFan(dev)
+        for dev in entry.runtime_data.devices
+        if isinstance(dev, TemplateDevice) and dev.type == TYPE_FAN
     )
 
 
 class RFNetworkFan(RFNetworkEntity, FanEntity, RestoreEntity):
-    """A ceiling fan driven by RF codes."""
+    """A fan driven by its template's speed codes."""
 
     _attr_name = None  # use the device name
     _attr_translation_key = "fan"
-    _attr_supported_features = (
-        FanEntityFeature.SET_SPEED
-        | FanEntityFeature.DIRECTION
-        | FanEntityFeature.TURN_ON
-        | FanEntityFeature.TURN_OFF
-    )
 
-    device: FanDip12
+    device: TemplateDevice
 
-    def __init__(self, device: FanDip12) -> None:
+    def __init__(self, device: TemplateDevice) -> None:
         super().__init__(device, "fan")
-        self._speeds = list(range(1, device.speed_count + 1))
-        self._attr_speed_count = device.speed_count
+        self._speeds = list(range(1, len(device.template.commands["speeds"]) + 1))
+        self._attr_speed_count = len(self._speeds)
+        features = FanEntityFeature.SET_SPEED | FanEntityFeature.TURN_ON | FanEntityFeature.TURN_OFF
+        if device.has("reverse"):
+            features |= FanEntityFeature.DIRECTION
+        self._attr_supported_features = features
         self._is_on = False
-        self._speed = device.DEFAULT_SPEED
-        self._attr_current_direction = DIRECTION_FORWARD
+        self._speed = (len(self._speeds) + 1) // 2
+        self._attr_current_direction = DIRECTION_FORWARD if device.has("reverse") else None
 
     async def async_added_to_hass(self) -> None:
         """Restore the last known state."""
@@ -63,8 +65,11 @@ class RFNetworkFan(RFNetworkEntity, FanEntity, RestoreEntity):
         if (last := await self.async_get_last_state()) is None:
             return
         self._is_on = last.state == "on"
-        if (direction := last.attributes.get("direction")) in (DIRECTION_FORWARD, DIRECTION_REVERSE):
-            self._attr_current_direction = direction
+        if self.device.has("reverse") and (d := last.attributes.get("direction")) in (
+            DIRECTION_FORWARD,
+            DIRECTION_REVERSE,
+        ):
+            self._attr_current_direction = d
         if (speed := last.attributes.get("rf_speed")) in self._speeds:
             self._speed = speed
 
@@ -87,7 +92,7 @@ class RFNetworkFan(RFNetworkEntity, FanEntity, RestoreEntity):
             await self.async_turn_off()
             return
         speed = percentage_to_ordered_list_item(self._speeds, percentage)
-        await self.device.async_send(self.device.speed_code(speed), action=f"fan_speed_{speed}")
+        await self.device.async_command("speeds", speed)
         self._is_on, self._speed = True, speed
         self.async_write_ha_state()
 
@@ -102,32 +107,29 @@ class RFNetworkFan(RFNetworkEntity, FanEntity, RestoreEntity):
         await self.async_set_percentage(percentage)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.device.async_send(self.device.code(self.device.OFF), action="fan_off")
+        if not self.device.has("off"):
+            raise HomeAssistantError(f"The {self.device.template.name} template has no off command")
+        await self.device.async_command("off")
         self._is_on = False
         self.async_write_ha_state()
 
     async def async_set_direction(self, direction: str) -> None:
         if direction == self._attr_current_direction:
             return
-        # The receiver only has a "reverse" toggle.
-        await self.device.async_send(self.device.code(self.device.REVERSE), action="fan_reverse")
+        await self.device.async_command("reverse")  # receivers only toggle direction
         self._attr_current_direction = direction
         self.async_write_ha_state()
 
     @callback
     def handle_press(self, press: Press) -> bool:
-        cmd = self.device.decode(press)
-        if cmd is None:
-            return False
-        if cmd.kind == "speed":
-            self._is_on, self._speed = True, cmd.speed
-        elif cmd.kind == "off":
+        cmd = self.device.command(press) or ""
+        if cmd.startswith("speed_"):
+            self._is_on, self._speed = True, int(cmd.removeprefix("speed_"))
+        elif cmd == "off":
             self._is_on = False
-        elif cmd.kind == "reverse":
+        elif cmd == "reverse" and self._attr_current_direction is not None:
             self._attr_current_direction = (
-                DIRECTION_REVERSE
-                if self._attr_current_direction == DIRECTION_FORWARD
-                else DIRECTION_FORWARD
+                DIRECTION_REVERSE if self._attr_current_direction == DIRECTION_FORWARD else DIRECTION_FORWARD
             )
         else:
             return False

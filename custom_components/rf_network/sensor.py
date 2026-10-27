@@ -13,7 +13,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import RFNetworkConfigEntry
 from .const import DOMAIN, NAME, SIGNAL_PRESS
-from .hub import Press, RFNetwork
+from .hub import SIGNAL_UNKNOWN, RFNetwork
 
 
 async def async_setup_entry(
@@ -25,28 +25,37 @@ async def async_setup_entry(
     hub = entry.runtime_data.hub
     info = DeviceInfo(identifiers={(DOMAIN, entry.entry_id)}, name=NAME, manufacturer=NAME, model="Hub")
     async_add_entities(
-        [RFLastCodeSensor(hub, entry.entry_id, info), RFGatewaysSensor(hub, entry.entry_id, info)]
+        [
+            RFLastCodeSensor(hub, entry.entry_id, info),
+            RFUnknownSensor(hub, entry.entry_id, info),
+            RFGatewaysSensor(hub, entry.entry_id, info),
+        ]
     )
 
 
-class RFLastCodeSensor(SensorEntity):
-    """The last remote press heard by any gateway: use it to learn codes."""
-
+class _HubSensor(SensorEntity):
     _attr_has_entity_name = True
     _attr_should_poll = False
-    _attr_translation_key = "last_code"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, hub: RFNetwork, entry_id: str, info: DeviceInfo) -> None:
+    def __init__(self, hub: RFNetwork, entry_id: str, info: DeviceInfo, key: str) -> None:
         self._hub = hub
-        self._attr_unique_id = f"{entry_id}_last_code"
+        self._attr_unique_id = f"{entry_id}_{key}"
+        self._attr_translation_key = key
         self._attr_device_info = info
 
+
+class RFLastCodeSensor(_HubSensor):
+    """The last press heard by any gateway, with template suggestions."""
+
+    def __init__(self, hub: RFNetwork, entry_id: str, info: DeviceInfo) -> None:
+        super().__init__(hub, entry_id, info, "last_code")
+
     async def async_added_to_hass(self) -> None:
-        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_PRESS, self._on_press))
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_PRESS, self._update))
 
     @callback
-    def _on_press(self, press: Press) -> None:
+    def _update(self, *_: Any) -> None:
         self.async_write_ha_state()
 
     @property
@@ -58,18 +67,36 @@ class RFLastCodeSensor(SensorEntity):
         return dict(self._hub.last_press_info)
 
 
-class RFGatewaysSensor(SensorEntity):
-    """How many gateways are online, with their names."""
+class RFUnknownSensor(_HubSensor):
+    """The last capture no encoding recognised, as a raw code you can learn."""
 
-    _attr_has_entity_name = True
-    _attr_translation_key = "gateways"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    def __init__(self, hub: RFNetwork, entry_id: str, info: DeviceInfo) -> None:
+        super().__init__(hub, entry_id, info, "last_unknown")
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_UNKNOWN, self._update))
+
+    @callback
+    def _update(self) -> None:
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> int | None:
+        return self._hub.last_unknown.get("pulses")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return dict(self._hub.last_unknown)
+
+
+class RFGatewaysSensor(_HubSensor):
+    """How many gateways are online, with their bands."""
+
+    _attr_should_poll = True
     _attr_native_unit_of_measurement = "gateways"
 
     def __init__(self, hub: RFNetwork, entry_id: str, info: DeviceInfo) -> None:
-        self._hub = hub
-        self._attr_unique_id = f"{entry_id}_gateways"
-        self._attr_device_info = info
+        super().__init__(hub, entry_id, info, "gateways")
 
     @property
     def native_value(self) -> int:
@@ -77,4 +104,9 @@ class RFGatewaysSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return {"gateways": self._hub.gateways()}
+        return {
+            "gateways": {
+                gw: (f"{band:g} MHz" if (band := self._hub.gateway_bands.get(gw)) else "band not reported yet")
+                for gw in self._hub.gateways()
+            }
+        }

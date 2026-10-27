@@ -1,0 +1,22 @@
+# Bit formats ("encodings") shared by device templates.
+#
+# Times are in units of `pulse` microseconds; each pair is [high, low].
+# `inverted: true` sends the low half of each pair first.
+# Add your own in <config>/rf_network/encodings.yaml (same format).
+
+aircool_12:
+  description: "Air Cool / Hampton Bay style fan remotes (rc_switch protocol 6 shape, 12 bits)"
+  pulse: 333
+  sync: [23, 1]
+  zero: [1, 2]
+  one: [2, 1]
+  inverted: true
+  bits: 12
+
+ev1527_24:
+  description: "EV1527 / PT2262 style 433 MHz remotes (rc_switch protocol 1, 24 bits)"
+  pulse: 350
+  sync: [1, 31]
+  zero: [1, 3]
+  one: [3, 1]
+  bits: 24

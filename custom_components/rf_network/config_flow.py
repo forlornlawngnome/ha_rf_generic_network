@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 import uuid
 
@@ -30,9 +29,9 @@ from .const import (
     CONF_ECHO_WINDOW,
     CONF_GATEWAY,
     CONF_NAME,
-    CONF_PROFILE,
     CONF_REPEATS,
     CONF_SETTINGS,
+    CONF_TEMPLATE,
     DEFAULT_BURST_GAP,
     DEFAULT_ECHO_WINDOW,
     DEFAULT_REPEATS,
@@ -41,29 +40,24 @@ from .const import (
     GATEWAY_AUTO,
     GATEWAY_SERVICE_SUFFIX,
     NAME,
-    PROFILE_BUTTONS,
-    PROFILE_FAN_A3,
+    TEMPLATE_LEARNED,
 )
 from .devices import format_buttons, parse_buttons
+from .library import DeviceTemplate, async_get_library
 
-ADDRESS_RE = re.compile(r"^[01]{6}$")
 CONF_DEVICE = "device"
 
 
 class RFNetworkConfigFlow(ConfigFlow, domain=DOMAIN):
     """Create the single RF Network entry."""
 
-    VERSION = 1
+    VERSION = 2
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
         if user_input is not None:
-            return self.async_create_entry(
-                title=NAME,
-                data={},
-                options={CONF_DEVICES: {}, CONF_SETTINGS: {}},
-            )
+            return self.async_create_entry(title=NAME, data={}, options={CONF_DEVICES: {}, CONF_SETTINGS: {}})
         return self.async_show_form(step_id="user")
 
     @staticmethod
@@ -77,6 +71,7 @@ class RFNetworkOptionsFlow(OptionsFlow):
 
     def __init__(self) -> None:
         self._edit_id: str | None = None
+        self._template: DeviceTemplate | None = None
 
     # ------------------------------------------------------------ helpers
     @property
@@ -95,15 +90,15 @@ class RFNetworkOptionsFlow(OptionsFlow):
         suffix = f"_{GATEWAY_SERVICE_SUFFIX}"
         services = self.hass.services.async_services().get(ESPHOME_DOMAIN, {})
         gateways = sorted(n[: -len(suffix)] for n in services if n.endswith(suffix))
-        options = [SelectOptionDict(value=GATEWAY_AUTO, label="Automatic (the gateway that hears it best)")]
+        options = [SelectOptionDict(value=GATEWAY_AUTO, label="Automatic (a gateway on the right band that hears it best)")]
         options += [SelectOptionDict(value=g, label=g) for g in gateways]
         return SelectSelector(SelectSelectorConfig(options=options, custom_value=True, mode=SelectSelectorMode.DROPDOWN))
 
-    def _device_selector(self, profile: str | None = None) -> SelectSelector:
+    def _device_selector(self, learned_only: bool = False) -> SelectSelector:
         options = [
             SelectOptionDict(value=dev_id, label=conf[CONF_NAME])
             for dev_id, conf in self._devices.items()
-            if profile is None or conf.get(CONF_PROFILE) == profile
+            if not learned_only or conf.get(CONF_TEMPLATE) == TEMPLATE_LEARNED
         ]
         return SelectSelector(SelectSelectorConfig(options=options, mode=SelectSelectorMode.DROPDOWN))
 
@@ -114,27 +109,63 @@ class RFNetworkOptionsFlow(OptionsFlow):
             if dev_id != ignore
         )
 
+    def _last_press(self) -> tuple[str | None, list[dict[str, Any]]]:
+        """Last press code and template suggestions, if the hub is running."""
+        data = getattr(self.config_entry, "runtime_data", None)
+        if data is None or data.hub.last_press is None:
+            return None, []
+        info = data.hub.last_press_info
+        return info.get("code"), info.get("suggestions") or []
+
     # --------------------------------------------------------------- menu
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        menu = ["add_fan", "add_buttons"]
-        if any(c.get(CONF_PROFILE) == PROFILE_BUTTONS for c in self._devices.values()):
-            menu.append("edit_buttons")
+        menu = ["add_device", "add_learned"]
+        if any(c.get(CONF_TEMPLATE) == TEMPLATE_LEARNED for c in self._devices.values()):
+            menu.append("edit_learned")
         if self._devices:
             menu.append("remove_device")
         menu.append("settings")
         return self.async_show_menu(step_id="init", menu_options=menu)
 
-    # ---------------------------------------------------------------- fan
-    async def async_step_add_fan(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    # ---------------------------------------------------- template device
+    async def async_step_add_device(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        library = await async_get_library(self.hass)
+        if user_input is not None:
+            self._template = library.templates[user_input[CONF_TEMPLATE]]
+            return await self.async_step_device_details()
+        if not library.templates:
+            return self.async_abort(reason="no_templates")
+        _, suggestions = self._last_press()
+        suggested = suggestions[0]["template"] if suggestions else None
+        options = [
+            SelectOptionDict(value=tpl.id, label=tpl.label)
+            for tpl in sorted(library.templates.values(), key=lambda t: t.label)
+        ]
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_TEMPLATE): SelectSelector(
+                    SelectSelectorConfig(options=options, mode=SelectSelectorMode.DROPDOWN)
+                )
+            }
+        )
+        detected = ", ".join(f"{s['name']} (address {s['address']})" for s in suggestions)
+        return self.async_show_form(
+            step_id="add_device",
+            data_schema=self.add_suggested_values_to_schema(schema, {CONF_TEMPLATE: suggested} if suggested else {}),
+            description_placeholders={"detected": detected or "nothing yet"},
+        )
+
+    async def async_step_device_details(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        tpl = self._template
+        assert tpl is not None
         errors: dict[str, str] = {}
         if user_input is not None:
-            address = user_input[CONF_ADDRESS].strip()
             name = user_input[CONF_NAME].strip()
-            if not ADDRESS_RE.match(address):
+            address = str(user_input.get(CONF_ADDRESS, "")).strip()
+            if len(address) != tpl.address_bits or set(address) - {"0", "1"}:
                 errors[CONF_ADDRESS] = "invalid_address"
             elif any(
-                c.get(CONF_PROFILE) == PROFILE_FAN_A3 and c.get(CONF_ADDRESS) == address
-                for c in self._devices.values()
+                c.get(CONF_TEMPLATE) == tpl.id and c.get(CONF_ADDRESS) == address for c in self._devices.values()
             ):
                 errors[CONF_ADDRESS] = "address_in_use"
             if not name or self._name_taken(name):
@@ -142,46 +173,53 @@ class RFNetworkOptionsFlow(OptionsFlow):
             if not errors:
                 devices = self._devices
                 devices[uuid.uuid4().hex[:10]] = {
-                    CONF_PROFILE: PROFILE_FAN_A3,
+                    CONF_TEMPLATE: tpl.id,
                     CONF_NAME: name,
                     CONF_ADDRESS: address,
                     CONF_GATEWAY: user_input.get(CONF_GATEWAY) or GATEWAY_AUTO,
                 }
                 return self._save(devices=devices)
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_NAME): str,
-                vol.Required(CONF_ADDRESS): str,
-                vol.Required(CONF_GATEWAY, default=GATEWAY_AUTO): self._gateway_selector(),
-            }
-        )
+
+        suggested: dict[str, Any] = dict(user_input or {})
+        if user_input is None:
+            code, _ = self._last_press()
+            if code and (parts := tpl.split(code)):
+                suggested[CONF_ADDRESS] = parts[0]
+        fields: dict[Any, Any] = {vol.Required(CONF_NAME): str}
+        if tpl.address_bits:
+            fields[vol.Required(CONF_ADDRESS)] = str
+        fields[vol.Required(CONF_GATEWAY, default=GATEWAY_AUTO)] = self._gateway_selector()
         return self.async_show_form(
-            step_id="add_fan",
-            data_schema=self.add_suggested_values_to_schema(schema, user_input or {}),
+            step_id="device_details",
+            data_schema=self.add_suggested_values_to_schema(vol.Schema(fields), suggested),
             errors=errors,
+            description_placeholders={
+                "template": tpl.name,
+                "bits": str(tpl.address_bits),
+                "example": tpl.address_example or "0" * tpl.address_bits,
+                "frequency": f"{tpl.frequency_mhz:g}",
+            },
         )
 
-    # ------------------------------------------------------------ buttons
-    async def async_step_add_buttons(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        return await self._buttons_form("add_buttons", user_input, dev_id=None)
+    # ---------------------------------------------------- learned remotes
+    async def async_step_add_learned(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return await self._learned_form("add_learned", user_input, dev_id=None)
 
-    async def async_step_edit_buttons(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_edit_learned(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             self._edit_id = user_input[CONF_DEVICE]
-            return await self.async_step_edit_buttons_codes()
+            return await self.async_step_edit_learned_codes()
         return self.async_show_form(
-            step_id="edit_buttons",
-            data_schema=vol.Schema({vol.Required(CONF_DEVICE): self._device_selector(PROFILE_BUTTONS)}),
+            step_id="edit_learned",
+            data_schema=vol.Schema({vol.Required(CONF_DEVICE): self._device_selector(learned_only=True)}),
         )
 
-    async def async_step_edit_buttons_codes(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        return await self._buttons_form("edit_buttons_codes", user_input, dev_id=self._edit_id)
+    async def async_step_edit_learned_codes(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return await self._learned_form("edit_learned_codes", user_input, dev_id=self._edit_id)
 
-    async def _buttons_form(
-        self, step_id: str, user_input: dict[str, Any] | None, dev_id: str | None
-    ) -> ConfigFlowResult:
+    async def _learned_form(self, step_id: str, user_input: dict[str, Any] | None, dev_id: str | None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
-        placeholders = {"error_detail": ""}
+        placeholders = {"error_detail": "", "last_code": self._last_press()[0] or "nothing yet"}
         if user_input is not None:
             name = user_input[CONF_NAME].strip()
             if not name or self._name_taken(name, ignore=dev_id):
@@ -194,7 +232,7 @@ class RFNetworkOptionsFlow(OptionsFlow):
             if not errors:
                 devices = self._devices
                 devices[dev_id or uuid.uuid4().hex[:10]] = {
-                    CONF_PROFILE: PROFILE_BUTTONS,
+                    CONF_TEMPLATE: TEMPLATE_LEARNED,
                     CONF_NAME: name,
                     CONF_GATEWAY: user_input.get(CONF_GATEWAY) or GATEWAY_AUTO,
                     CONF_BUTTONS: buttons,

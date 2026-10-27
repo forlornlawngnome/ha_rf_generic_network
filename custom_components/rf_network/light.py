@@ -1,4 +1,4 @@
-"""Light entities for RF Network."""
+"""Light entities for RF Network: light templates and lights built into fans."""
 
 from __future__ import annotations
 
@@ -10,9 +10,16 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import RFNetworkConfigEntry
-from .devices import FanDip12
+from .devices import TemplateDevice
 from .entity import RFNetworkEntity
 from .hub import Press
+from .library import TYPE_FAN, TYPE_LIGHT
+
+# Command names for each device type: (toggle, on, off)
+COMMANDS = {
+    TYPE_FAN: ("light_toggle", "light_on", "light_off"),
+    TYPE_LIGHT: ("toggle", "on", "off"),
+}
 
 
 async def async_setup_entry(
@@ -20,27 +27,36 @@ async def async_setup_entry(
     entry: RFNetworkConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Add the light of every fan device."""
-    async_add_entities(
-        RFNetworkFanLight(dev) for dev in entry.runtime_data.devices if isinstance(dev, FanDip12)
-    )
+    """Add light devices and the lights of fans that have one."""
+    entities = []
+    for dev in entry.runtime_data.devices:
+        if not isinstance(dev, TemplateDevice) or dev.type not in COMMANDS:
+            continue
+        toggle, on, off = COMMANDS[dev.type]
+        if dev.has(toggle) or (dev.has(on) and dev.has(off)):
+            entities.append(RFNetworkLight(dev, toggle, on, off))
+    async_add_entities(entities)
 
 
-class RFNetworkFanLight(RFNetworkEntity, LightEntity, RestoreEntity):
-    """A fan's light. The receiver only has a toggle, so on/off is tracked here.
+class RFNetworkLight(RFNetworkEntity, LightEntity, RestoreEntity):
+    """An on/off light. With only a toggle code, on/off is tracked here.
 
-    If the state is wrong (e.g. after a power cut), turn it off and on again,
-    or tap the wall remote once: every remote press updates the state.
+    If the state is wrong (e.g. after a power cut), tap the physical remote
+    once: every remote press updates the state.
     """
 
-    _attr_translation_key = "light"
     _attr_color_mode = ColorMode.ONOFF
     _attr_supported_color_modes = {ColorMode.ONOFF}
 
-    device: FanDip12
+    device: TemplateDevice
 
-    def __init__(self, device: FanDip12) -> None:
+    def __init__(self, device: TemplateDevice, toggle: str, on: str, off: str) -> None:
         super().__init__(device, "light")
+        self._toggle, self._on, self._off = toggle, on, off
+        if device.type == TYPE_LIGHT:
+            self._attr_name = None  # the device itself is the light
+        else:
+            self._attr_translation_key = "light"
         self._attr_is_on = False
 
     async def async_added_to_hass(self) -> None:
@@ -48,24 +64,31 @@ class RFNetworkFanLight(RFNetworkEntity, LightEntity, RestoreEntity):
         if (last := await self.async_get_last_state()) is not None:
             self._attr_is_on = last.state == "on"
 
-    async def _toggle_to(self, on: bool) -> None:
-        if self._attr_is_on == on:
-            return
-        await self.device.async_send(self.device.code(self.device.LIGHT), action="light_toggle")
+    async def _switch(self, on: bool) -> None:
+        direct = self._on if on else self._off
+        if self.device.has(direct):
+            await self.device.async_command(direct)
+        elif self._attr_is_on != on:
+            await self.device.async_command(self._toggle)
         self._attr_is_on = on
         self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._toggle_to(True)
+        await self._switch(True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self._toggle_to(False)
+        await self._switch(False)
 
     @callback
     def handle_press(self, press: Press) -> bool:
-        cmd = self.device.decode(press)
-        if cmd is None or cmd.kind != "light":
-            # A held light key ramps the dimmer without toggling.
+        cmd = self.device.command(press)
+        if cmd == self._toggle:
+            self._attr_is_on = not self._attr_is_on
+        elif cmd == self._on:
+            self._attr_is_on = True
+        elif cmd == self._off:
+            self._attr_is_on = False
+        else:
+            # A held key ramps a dimmer without toggling.
             return False
-        self._attr_is_on = not self._attr_is_on
         return True

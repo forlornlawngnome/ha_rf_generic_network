@@ -1,0 +1,16 @@
+# Example light template (e.g. a plug-in lamp or LED controller remote).
+# Copy to <config>/rf_network/templates/lights/<name>.yaml and fill in.
+
+name: Example brand RF light
+type: light
+frequency_mhz: 433.92
+encoding: ev1527_24
+address_bits: 20
+commands:
+  # Either a single toggle...
+  toggle: "0001"
+  # ...or separate codes:
+  # on: "0001"
+  # off: "0010"
+  brightness_up: "0100"     # optional, shown as buttons
+  brightness_down: "1000"   # optional

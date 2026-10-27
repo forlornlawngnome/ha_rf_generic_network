@@ -1,0 +1,14 @@
+# Example button-only template: every command becomes a button entity.
+# Good for remotes whose devices report nothing back (LED strips, sockets).
+# Copy to <config>/rf_network/templates/generic/<name>.yaml and fill in.
+
+name: Example 4-button 433 MHz remote
+type: buttons
+frequency_mhz: 433.92
+encoding: ev1527_24
+address_bits: 20
+commands:
+  A: "0001"
+  B: "0010"
+  C: "0100"
+  D: "1000"
