@@ -60,8 +60,8 @@ substitutions:
 packages:
   rf_network:
     url: https://github.com/forlornlawngnome/ha_rf_generic_network
-    ref: main
-    refresh: 1d
+    ref: v0.1.0
+    refresh: never
     files:
       - esphome/hardware/esp32-devkit-cc1101.yaml
       - esphome/rf-network-core.yaml
@@ -70,10 +70,15 @@ packages:
 The full example, with the API key, OTA and Wi-Fi, is
 [`esphome/rf-gateway.example.yaml`](esphome/rf-gateway.example.yaml).
 
-- `refresh: 1d` makes ESPHome check this repository for changes at most once
-  a day. To pick up a change sooner, use **Clean Build Files** on the device.
-- Pin `ref:` to a release tag instead of `main` if you want updates only when
-  you choose.
+- `ref:` pins the firmware to a [release](https://github.com/forlornlawngnome/ha_rf_generic_network/releases).
+  A release never changes, so the gateway only updates when you change
+  `ref:` to a newer one and install. ESPHome caches each ref separately, so a
+  new `ref:` is downloaded on the next install.
+- `refresh: never` stops ESPHome checking GitHub on every build; a release
+  tag cannot change anyway.
+- To follow the latest development instead, use `ref: main` with
+  `refresh: 1d` (checks at most once a day). **Clean Build Files** does not
+  re-download packages; it only deletes the compiled firmware.
 - Hardware files do not set up Wi-Fi; add `wifi:` in the gateway file. The
   Ethernet hardware file sets up Ethernet itself, and ESPHome does not allow
   Wi-Fi and Ethernet on the same device.
@@ -186,6 +191,14 @@ Event data: `code`, `gateways`, `frames`, `duration_ms`, `device`,
 Profiles live in `custom_components/rf_network/devices.py`. Subclass
 `RFDevice`, implement `matches()` and `describe()`, register it in `PROFILES`,
 then add the entities in the platform files and a step in `config_flow.py`.
+
+## Versions
+
+Releases are tagged `vMAJOR.MINOR.PATCH`. One tag covers both the Home
+Assistant integration (HACS shows it as the version to install) and the
+gateway firmware (`ref:` in the gateway file). Release notes say when a
+gateway needs updating alongside the integration; until then, any gateway
+on the same major version works.
 
 ## Development
 

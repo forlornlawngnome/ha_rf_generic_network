@@ -28,8 +28,10 @@ esphome:
 packages:
   rf_network:
     url: https://github.com/forlornlawngnome/ha_rf_generic_network
-    ref: main
-    refresh: 1d
+    # A release tag: the gateway only changes when you change this.
+    # See https://github.com/forlornlawngnome/ha_rf_generic_network/releases
+    ref: v0.1.0
+    refresh: never
     files:
       # Pick ONE hardware file:
       - esphome/hardware/esp32-devkit-cc1101.yaml
