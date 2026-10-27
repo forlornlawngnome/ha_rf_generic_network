@@ -60,7 +60,7 @@ substitutions:
 packages:
   rf_network:
     url: https://github.com/forlornlawngnome/ha_rf_generic_network
-    ref: v0.1.0
+    ref: 0.1.0
     refresh: never
     files:
       - esphome/hardware/esp32-devkit-cc1101.yaml
@@ -194,7 +194,7 @@ then add the entities in the platform files and a step in `config_flow.py`.
 
 ## Versions
 
-Releases are tagged `vMAJOR.MINOR.PATCH`. One tag covers both the Home
+Releases are tagged `MAJOR.MINOR.PATCH` (e.g. `0.1.0`, no `v`). One tag covers both the Home
 Assistant integration (HACS shows it as the version to install) and the
 gateway firmware (`ref:` in the gateway file). Release notes say when a
 gateway needs updating alongside the integration; until then, any gateway
